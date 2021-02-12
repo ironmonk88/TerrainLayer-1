@@ -1,0 +1,23 @@
+<form autocomplete="off" onsubmit="event.preventDefault();">
+    <p class="notes">Configure this scene terrain.</p>
+
+    <div class="form-group">
+        <label for="x">X-Position <span class="units">(pixels)</span></label>
+        <input type="text" name="x" value="{{object.x}}" data-dtype="Number">
+    </div>
+
+    <div class="form-group">
+        <label for="y">Y-Position <span class="units">(pixels)</span></label>
+        <input type="text" name="y" value="{{object.y}}" data-dtype="Number">
+    </div>
+
+    <div class="form-group">
+        <label for="multiple">Multiple</label>
+        <div class="form-fields">
+            <input type="range" name="multiple" data-dtype="Number" value="{{object.multiple}}" min="1" max="4" step="1">
+            <span class="range-value">{{object.multiple}}</span>
+        </div>
+    </div>
+
+    <button type="submit" name="submit" value="1"><i class="far fa-save"></i> Update Terrain</button>
+</form>

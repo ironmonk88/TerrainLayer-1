@@ -1,0 +1,9 @@
+<svg id="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160" fill="#ffffff" fill-opacity="0.4" stroke="#ffffff" stroke-opacity="0.5" stroke-width="4">
+  <g transform="translate(0,0)" style="touch-action: none;">
+    <path d="M0 0L10 0 L0 10 z"/>
+	<path d="M70 0L90 0 L0 90 L0 70 z"/>
+	<path d="M160 0L160 10 L10 160 L0 160 L0 150 L150 0 z"/>
+	<path d="M160 70L160 90 L90 160 L70 160 z"/>
+	<path d="M160 160L150 160 L160 150 z"/>
+  </g>
+</svg>

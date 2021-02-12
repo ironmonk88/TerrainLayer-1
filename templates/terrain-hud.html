@@ -1,0 +1,23 @@
+<form id="{{id}}" class="{{classes}}" data-appid="{{appId}}" autocomplete="off" onsubmit="event.preventDefault();">
+    <div class="col left">
+    </div>
+
+    <div class="col middle">
+    </div>
+
+    <div class="col right" style="justify-content: center;">
+        {{#if isGM}}
+        <div class="control-icon visibility ">
+            <img src="{{icons.visibility}}" width="36" height="36" title="{{localize "HUD.ToggleVis"}}">
+        </div>
+
+        <div class="control-icon inc-multiple">
+            <img src="{{icons.up}}" width="36" height="36" title="Increase Multiple" />
+        </div>
+
+        <div class="control-icon dec-multiple">
+            <img src="{{icons.down}}" width="36" height="36" title="Decrease Multiple" />
+        </div>
+        {{/if}}
+    </div>
+</form>
