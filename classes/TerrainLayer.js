@@ -1,583 +1,366 @@
-//TERRAIN LAYER
-let TLControlPress = false;
+import { Terrain } from './terrain.js';
+import { TerrainConfig } from './terrainconfig.js';
+import { TerrainHUD } from './terrainhud.js';
+
+export let debug = (...args) => {
+    if (debugEnabled > 1) console.log("DEBUG: terrainlayer | ", ...args);
+};
+export let log = (...args) => console.log("terrainlayer | ", ...args);
+export let warn = (...args) => {
+    if (debugEnabled > 0) console.warn("terrainlayer | ", ...args);
+};
+export let error = (...args) => console.error("terrainlayer | ", ...args);
+export let i18n = key => {
+    return game.i18n.localize(key);
+};
+
+export let setting = key => {
+    return game.settings.get("TerrainLayer", key);
+};
+
+export class TerrainLayer extends PlaceablesLayer {
+    constructor() {
+        super();
+        this.showterrain = game.settings.get("TerrainLayer", "showterrain");
+        this.defaultmultiple = 2;
+    }
+
+    /** @override */
+    static get layerOptions() {
+        return mergeObject(super.layerOptions, {
+            zIndex: 15,
+            controllableObjects: true,
+            //objectClass: Note,
+            //sheetClass: NoteConfig,
+            objectClass: Terrain,
+            sheetClass: TerrainConfig,
+            rotatableObjects: false
+        });
+    }
+
+    static get multipleOptions() {
+        return [0.5, 2, 3, 4];
+    }
+
+    static multipleText(multiple) {
+        return (parseInt(multiple) == 1 || parseInt(multiple) == 0.5 ? '1/2' : multiple);
+    }
+
+/* -------------------------------------------- */
+
+    get costGrid() {
+        log('costGrid is deprecated, please use the cost function instead');
+        if (this._costGrid == undefined) {
+            this.buildCostGrid(canvas.scene.data.terrain);
+        }
+        return this._costGrid;
+    }
+
+    /**
+     * Tile objects on this layer utilize the TileHUD
+     * @type {TerrainHUD}
+     */
+    get hud() {
+        return canvas.hud.terrain;
+    }
+
+    /*
+    async draw() {
+        canvas.scene._data.terrain = canvas.scene.data.terrain = (canvas.scene.data.flags?.TerrainLayer?.data || []);
+        super.draw();
+    }*/
+
+    async draw() {
+        canvas.scene.data.terrain = [];
+
+        if (canvas.scene.data.flags?.TerrainLayer) {
+            for (let [k, v] of Object.entries(canvas.scene.data.flags?.TerrainLayer)) {
+                if (k.startsWith('terrain')) {
+                    if (k != 'terrainundefined')
+                        canvas.scene.data.terrain.push(v);
+                    else
+                        canvas.scene.unsetFlag('TerrainLayer', k);
+                }
+            };
+        }
+
+        const d = canvas.dimensions;
+        this.width = d.width;
+        this.height = d.height;
+        this.hitArea = d.rect;
+        this.zIndex = this.constructor.layerOptions.zIndex;
+
+        // Create objects container which can be sorted
+        this.objects = this.addChild(new PIXI.Container());
+        this.objects.sortableChildren = true;
+        this.objects.visible = false;
+
+
+        // Create preview container which is always above objects
+        this.preview = this.addChild(new PIXI.Container());
+
+        // Create and draw objects
+        const promises = canvas.scene.data.terrain.map(data => {
+            const obj = this.createObject(data);
+            return obj.draw();
+        });
+
+        // Wait for all objects to draw
+        this.visible = true;
+        return Promise.all(promises || []);
+    }
+
+    async buildCostGrid(data) {
+        this._costGrid = {};
+        for (let grid of data) {
+            let multiple = grid.multiple;
+            let type = 'ground';
+            if (typeof this._costGrid[grid.y] === 'undefined')
+                this._costGrid[grid.y] = {};
+            this._costGrid[grid.y][grid.x] = { multiple, type };
+
+        }
+    }
+
+    async toggle(show, emit = false) {
+        //this.highlight.children[0].visible = !this.highlight.children[0].visible;
+        if (show == undefined)
+            show = !this.showterrain;
+        this.showterrain = show;
+        game.settings.set("TerrainLayer", "showterrain", this.showterrain);
+        if (game.user.isGM && emit) {
+            //await canvas.scene.setFlag('TerrainLayer','sceneVisibility', this.highlight.children[0].visible )
+            game.socket.emit('module.TerrainLayer', { action: 'toggle', arguments: [this.showterrain] })
+        }
+    }
+
+    deactivate() {
+        super.deactivate();
+        if (this.objects) this.objects.visible = true;
+    }
+
+    async updateMany(data, options = {}) {
+        const user = game.user;
+
+        const pending = new Map();
+        data = data instanceof Array ? data : [data];
+        for (let d of data) {
+            if (!d._id) throw new Error("You must provide an id for every Embedded Entity in an update operation");
+            pending.set(d._id, d);
+        }
+
+        // Difference each update against existing data
+        const updates = canvas.scene.data.terrain.reduce((arr, d) => {
+            if (!pending.has(d._id)) return arr;
+            let update = pending.get(d._id);
+
+            // Diff the update against current data
+            if (options.diff) {
+                update = diffObject(d, expandObject(update));
+                if (isObjectEmpty(update)) return arr;
+                update["_id"] = d._id;
+            }
+
+            // Call pre-update hooks to ensure the update is allowed to proceed
+            if (!options.noHook) {
+                const allowed = Hooks.call(`preUpdateTerrain`, this, d, update, options, user._id);
+                if (allowed === false) {
+                    console.debug(`TerrainLayer | Terrain update prevented by preUpdate hook`);
+                    return arr;
+                }
+            }
+
+            // Stage the update
+            arr.push(update);
+            return arr;
+        }, []);
+        if (!updates.length) return [];
+
+        let flags = {};
+        for (let u of updates) {
+            let key = `flags.TerrainLayer.terrain${u._id}`;
+            flags[key] = u;
+        }
+
+        canvas.scene.update(flags);
+    }
+
+    async deleteMany(ids, options = {}) {
+        //+++ need to update this to only respond to actual deletions
+
+        let updates = {};
+        let originals = [];
+        for (let id of ids) {
+            const object = this.get(id);
+            log('Removing terrain', object.data.x, object.data.y);
+            originals.push(object);
+            this.objects.removeChild(object);
+            delete this._controlled[id];
+            object._onDelete(options, game.user.id);
+            object.destroy({ children: true });
+            let key = `flags.TerrainLayer.-=terrain${id}`;
+            updates[key] = null;
+        }
+
+        this.storeHistory("delete", originals);
+
+        canvas.scene.update(updates);
+    }
+
+    _onClickLeft(event) {
+        super._onClickLeft(event);
+        if (game.activeTool == 'addterrain') {
+            this.createTerrain(event.data.getLocalPosition(canvas.app.stage));
+            //make sure there isn't a terrain already there
+            /*
+            let pos = event.data.getLocalPosition(canvas.app.stage);
+            let gridPt = canvas.grid.grid.getGridPositionFromPixels(pos.x, pos.y);
+            let [y, x] = gridPt;  //Normalize the returned data because it's in [y,x] format
+            log('Adding terrain', x, y);
+            if (!this.terrainExists(x, y)) {
+                //const terrain = new Terrain({ x: x, y: y });
+                //this.constructor.placeableClass.create(terrain.data);
+                //terrain.draw();
+                this.constructor.placeableClass.create({ x: x, y: y, multiple: 2 });
+            }
+            this._costGrid = null;*/
+        }
+    }
+
+    _onDragLeftStart(e) {
+        if (game.activeTool == "select")
+            this.dragging = true;
+    }
+
+    _onDragLeftMove(event) {
+        if (game.activeTool == "select")
+            return this._onDragSelect(event);
+        else if (game.activeTool == 'addterrain') {
+            this.createTerrain(event.data.getLocalPosition(canvas.app.stage));
+            /*let pos = event.data.getLocalPosition(canvas.app.stage);
+            let gridPt = canvas.grid.grid.getGridPositionFromPixels(pos.x, pos.y);
+            let [y, x] = gridPt;  //Normalize the returned data because it's in [y,x] format
+
+            if (!this.terrainExists(x, y)) {
+                //const terrain = new Terrain({ x: x, y: y });
+                //terrain.draw();
+                //this.constructor.placeableClass.create(terrain.data);
+                this.constructor.placeableClass.create({ x: x, y: y, multiple: 2 });
+            }
+            this._costGrid = null;*/
+        }
+    }
+
+    _onDragSelect(event) {
+        // Extract event data
+        const { origin, destination } = event.data;
+
+        // Determine rectangle coordinates
+        let coords = {
+            x: Math.min(origin.x, destination.x),
+            y: Math.min(origin.y, destination.y),
+            width: Math.abs(destination.x - origin.x),
+            height: Math.abs(destination.y - origin.y)
+        };
+
+        // Draw the select rectangle
+        canvas.controls.drawSelect(coords);
+        event.data.coords = coords;
+    }
+
+    _onDragLeftDrop(e) {
+        if (game.activeTool == "select") {
+            canvas._onDragLeftDrop(event);
+        }
+        else if (game.activeTool != 'addterrain') {
+            super._onDragLeftDrop(event);
+        }
+    }
+
+    selectObjects({ x, y, width, height, releaseOptions = {}, controlOptions = {} } = {}) {
+        const oldSet = Object.values(this._controlled);
+
+        let sPt = canvas.grid.grid.getGridPositionFromPixels(x, y);
+        let [y1, x1] = sPt;  //Normalize the returned data because it's in [y,x] format
+        let dPt = canvas.grid.grid.getGridPositionFromPixels(x + width, y + height);
+        let [y2, x2] = dPt;  //Normalize the returned data because it's in [y,x] format
+
+        // Identify controllable objects
+        const controllable = this.placeables.filter(obj => obj.visible && (obj.control instanceof Function));
+        const newSet = controllable.filter(obj => {
+            return !(obj.data.x < x1 || obj.data.x > x2 || obj.data.y < y1 || obj.data.y > y2);
+        });
+
+        // Release objects no longer controlled
+        const toRelease = oldSet.filter(obj => !newSet.includes(obj));
+        toRelease.forEach(obj => obj.release(releaseOptions));
+
+        // Control new objects
+        if (isObjectEmpty(controlOptions)) controlOptions.releaseOthers = false;
+        const toControl = newSet.filter(obj => !oldSet.includes(obj));
+        toControl.forEach(obj => obj.control(controlOptions));
+
+        // Return a boolean for whether the control set was changed
+        const changed = (toRelease.length > 0) || (toControl.length > 0);
+        if (changed) canvas.initializeSources();
+        return changed;
+    }
+
+    createTerrain(pos) {
+        let gridPt = canvas.grid.grid.getGridPositionFromPixels(pos.x, pos.y);
+        let [y, x] = gridPt;  //Normalize the returned data because it's in [y,x] format
+
+        if (!this.terrainExists(x, y)) {
+            //const terrain = new Terrain({ x: x, y: y });
+            //terrain.draw();
+            //this.constructor.placeableClass.create(terrain.data);
+            this.constructor.placeableClass.create({ x: x, y: y, multiple: this.defaultmultiple });
+        }
+        this._costGrid = null;
+    }
+
+
+    /* -------------------------------------------- */
+
+    /**
+     * Handle drop events for Tile data on the Tiles Layer
+     * @param {DragEvent} event     The concluding drag event
+     * @param {object} data         The extracted Tile data
+     * @private
+     */
+    async _onDropTerrainData(event, data) {
+        if (!data.img) return;
+        if (!this._active) this.activate();
+
+        // Determine the tile size
+        const tex = await loadTexture(data.img);
+        const ratio = canvas.dimensions.size / (data.terrainSize || canvas.dimensions.size);
+        data.width = tex.baseTexture.width * ratio;
+        data.height = tex.baseTexture.height * ratio;
+
+        // Validate that the drop position is in-bounds and snap to grid
+        if (!canvas.grid.hitArea.contains(data.x, data.y)) return false;
+        data.x = data.x - (data.width / 2);
+        data.y = data.y - (data.height / 2);
+        if (!event.shiftKey) mergeObject(data, canvas.grid.getSnappedPosition(data.x, data.y));
+
+        // Create the tile as hidden if the ALT key is pressed
+        if (event.altKey) data.hidden = true;
+
+        // Create the Tile
+        return this.constructor.placeableClass.create(data);
+    }
+
+    terrainExists(pxX, pxY) {
+        return canvas.scene.data.terrain.find(t => { return t.x == pxX && t.y == pxY }) != undefined;
+    }
+}
+
 class TerrainSquare extends PIXI.Graphics {
-  constructor(coord,...args){
-    super(...args);
-    this.coord = coord;
-    let topLeft = canvas.grid.grid.getPixelsFromGridPosition(coord.x,coord.y)
-    this.thePosition = `${topLeft[0]}.${topLeft[1]}`;
-   
-  }
-}
-export class TerrainHighlight extends PIXI.Graphics {
-  constructor(name,...args){
-    super(...args);
-
-    /**
-     * Track the Grid Highlight name
-     * @type {String}
-     */
-    this.name = name;
-
-    /**
-     * Track distinct positions which have already been highlighted
-     * @type {Set}
-     */
-    this.visible = canvas.scene.getFlag('TerrainLayer','sceneVisibility') || true;
-    this.positions = new Set();
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Record a position that is highlighted and return whether or not it should be rendered
-   * @param {Number} x    The x-coordinate to highlight
-   * @param {Number} y    The y-coordinate to highlight
-   * @return {Boolean}    Whether or not to draw the highlight for this location
-   */
-  highlight(pxX, pxY) {
-    let key = `${pxX}.${pxY}`;
-    if ( this.positions.has(key) ) return false;
-    this.positions.add(key);
-    return true;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Extend the Graphics clear logic to also reset the highlighted positions
-   * @param args
-   */
-  clear(...args) {
-    super.clear(...args);
-    this.positions = new Set();
-  }
-
-
-  /* -------------------------------------------- */
-
-  /**
-   * Extend how this Graphics container is destroyed to also remove parent layer references
-   * @param args
-   */
-  destroy(...args) {
-    delete canvas.terrain.highlightLayers[this.name];
-    super.destroy(...args);
-  }
-}
-export class TerrainLayer extends CanvasLayer{
-	constructor(){
-		super();
-    this.scene = null;
-   // this.sceneId = this.scene._id;
-    //this.layerName = `DifficultTerrain.${this.scene._id}`;
-    this.highlight = null;
-    this.mouseInteractionManager = null;
-    this.dragging = false;
-   // this._addListeners();
-
-	}
-  async draw(){
-
-    this._deRegisterMouseListeners()
-    await super.draw();
-    console.log('draw')
-    this.highlightLayers = {};
-    this.scene = canvas.scene;
-    this.sceneId = this.scene._id;
-    this.layerName = `DifficultTerrain.${this.scene._id}`;
-    this.highlight = this.addChild(new PIXI.Container());
-    this.addHighlightLayer(this.layerName);
-    this.costGrid = this.scene.getFlag('TerrainLayer','costGrid') ?? {};
-    Hooks.once('canvasReady',this.buildFromCostGrid.bind(this))
-    this._addListeners();
-    return this;
-  }
-  async tearDown(){
-    console.log('tearDown')
-    super.tearDown();
-    this._deRegisterMouseListeners()
-    this._deRegisterKeyboardListeners();
-  }
-  async toggle(emit = false){
-    this.highlight.children[0].visible = !this.highlight.children[0].visible;
-    if(game.user.isGM && emit){
-      await canvas.scene.setFlag('TerrainLayer','sceneVisibility', this.highlight.children[0].visible )
-      game.socket.emit('module.TerrainLayer',{action:'toggle',arguments:[]})
+    constructor(coord, ...args) {
+        super(...args);
+        this.coord = coord;
+        let topLeft = canvas.grid.grid.getPixelsFromGridPosition(coord.x, coord.y)
+        this.thePosition = `${topLeft[0]}.${topLeft[1]}`;
     }
-  }
-  _addListeners() {
-
-    // Define callback functions for mouse interaction events
-    const callbacks = {
-      dragLeftStart: this._onDragLeftStart.bind(this),
-      dragLeftMove: this._onDragLeftMove.bind(this),
-      clickRight: this._onClickRight.bind(this),
-      dragRightMove: this._onDragRightMove.bind(this),
-      dragLeftDrop:this._onDragLeftDrop.bind(this)
-    };
-
-    // Create and activate the interaction manager
-    const permissions = {};
-    const mgr = new MouseInteractionManager(this, this, permissions, callbacks);
-    this.mouseInteractionManager = mgr.activate();
-
-  }
-  addHighlightLayer(name) {
-    const layer = this.highlightLayers[name];
-    if ( !layer || layer._destroyed ) {
-      this.highlightLayers[name] = this.highlight.addChild(new TerrainHighlight(name));
-     
-      canvas.terrain.highlight.children[0].visible = (typeof canvas.scene.getFlag('TerrainLayer','sceneVisibility') !='undefined') ?  canvas.scene.getFlag('TerrainLayer','sceneVisibility'):true;
-    }
-    return this.highlightLayers[name];
-  }
-  getHighlightLayer(name) {
-    return this.highlightLayers[name];
-  }
-  /**
-   * Clear a specific Highlight graphic
-   * @param name
-   */
-  clearHighlightLayer(name) {
-    const layer = this.highlightLayers[name];
-    if ( layer ) layer.clear();
-  }
-  /* -------------------------------------------- */
-
-  /**
-   * Destroy a specific Highlight graphic
-   * @param name
-   */
-  destroyHighlightLayer(name) {
-    const layer = this.highlightLayers[name];
-    this.highlight.removeChild(layer);
-    layer.destroy();
-  }
-  highlightPosition(name, options) {
-    const layer = this.highlightLayers[name];
-    if ( !layer ) return false;
-    if(canvas.grid.type == 1)
-      this.highlightGridPosition(layer, options);
-    else if(canvas.grid.type == 2 || canvas.grid.type == 3 || canvas.grid.type == 4 || canvas.grid.type == 5)
-      this.highlightHexPosition(layer,options);
-  }
-  /** @override */
-  highlightGridPosition(layer , {gridX, gridY, multiple=2,type='ground'}={}) {
-    //GRID ALREADY HIGHLIGHTED
-    let gsW = canvas.grid.grid.w;
-    let gsH = canvas.grid.grid.h;
-    
-    let px = canvas.grid.grid.getPixelsFromGridPosition(gridX,gridY)
-    
-    const key = `${px[0]}.${px[1]}`;
-    
-    layer.highlight(px[0],px[1]);
-    let s = canvas.dimensions.size;
-    let terrainSquare = new TerrainSquare({x:gridX,y:gridY})
-    let offset = 15;
-    terrainSquare.x = px[0];
-    terrainSquare.y = px[1];
-    terrainSquare.width = gsW;
-    terrainSquare.height = gsH;
-    terrainSquare.lineStyle(7, 0xffffff, 0.5);
-    terrainSquare.moveTo((gsW/2), offset);
-    terrainSquare.lineTo(offset, gsH-offset);
-    terrainSquare.lineTo(gsW-offset, gsH-offset);
-    terrainSquare.lineTo((gsW/2), offset);
-    terrainSquare.closePath();
-    terrainSquare.blendMode = PIXI.BLEND_MODES.OVERLAY;
-  
-    let text = new PIXI.Text('x'+multiple,{fontFamily : 'Arial', fontSize: 12, fill : 0xffffff,opacity:game.settings.get('TerrainLayer','opacity'), align : 'center'})
-    text.blendMode = PIXI.BLEND_MODES.OVERLAY;
-    text.anchor.set(0.5,0.5);
-    text.x = gsW/2;
-    text.y = (gsH/2)+7;
-  
-    terrainSquare.addChild(text);
-    terrainSquare.scale.x = game.settings.get('TerrainLayer','scale');
-    terrainSquare.scale.y = game.settings.get('TerrainLayer','scale');
-    terrainSquare.alpha = game.settings.get('TerrainLayer','opacity')
-   // console.log(terrainSquare)
-    layer.addChild(terrainSquare);
-
-     // this.addToCostGrid(gridX,gridY);
-  
-  }
-  highlightHexPosition(layer,{gridX,gridY,multiple=2,type='ground'}={}){
-    
-    let gsW = Math.floor(canvas.grid.grid.w);
-    let gsH = Math.round(canvas.grid.grid.h);
-   
-    let topLeft = canvas.grid.grid.getPixelsFromGridPosition(gridX,gridY)
-    let pxX = topLeft[0];
-    let pxY = topLeft[1];
-  
-    const points = canvas.grid.grid.options.columns ? canvas.grid.grid.constructor.flatHexPoints : canvas.grid.grid.constructor.pointyHexPoints;
-    const coords = points.reduce((arr, p) => {
-      arr.push(topLeft[0] + (p[0]*gsW));
-      arr.push(topLeft[1] + (p[1]*gsH));
-      return arr;
-    }, []);
-    
-    
-      let col = canvas.grid.grid.columns;
-      let even = canvas.grid.grid.even;
-     
-      let terrainSquare = new TerrainSquare({x:gridX,y:gridY})
-
-      layer.highlight(pxX,pxY);
-      
-      let offset = gsH* 0.16;
-
-      const halfW = (gsW/2)
-    
-      terrainSquare.y = topLeft[1];
-      terrainSquare.x = topLeft[0];
-     
-      terrainSquare.width = gsW;
-      terrainSquare.height = gsH;
-      
-     let text = new PIXI.Text('x'+multiple,{fontFamily : 'Arial', fontSize: 12, fill : 0xffffff,opacity:0.5, align : 'center'})
-
-      
-      if(canvas.grid.type == 4 || canvas.grid.type == 5){
-        terrainSquare.lineStyle(4, 0xffffff, 0.5);
-        terrainSquare.moveTo(halfW,offset*2);
-        terrainSquare.lineTo(offset*2, gsW-(offset*3));
-        terrainSquare.lineTo(gsW-(offset*2), gsW-(offset*3));
-        terrainSquare.lineTo(halfW, offset*2);
-        text.y = (gsH/2)+3;
-      }else{
-        terrainSquare.lineStyle(7, 0xffffff, 0.5);
-        terrainSquare.moveTo(halfW,offset);
-        terrainSquare.lineTo(offset, gsW-offset);
-        terrainSquare.lineTo(gsW-offset, gsW-offset);
-        terrainSquare.lineTo(halfW, offset);
-        text.y = (gsH/2)+7;
-      }
-      
-      terrainSquare.closePath();
-      terrainSquare.blendMode = PIXI.BLEND_MODES.OVERLAY;
-   
-      
-      text.blendMode = PIXI.BLEND_MODES.OVERLAY;
-      text.anchor.set(0.5,0.5);
-      text.x = gsW/2;
-      
-    
-      terrainSquare.addChild(text);
-     
-      
-      layer.addChild(terrainSquare);
-    //  this.addToCostGrid(gridX,gridY,multiple);
-    
-  }
-	_registerMouseListeners() {
-	    this.addListener('pointerup', this._pointerUp);
-	    this.dragging = false;
-	}
-	_registerKeyboardListeners() {
-  	$(document).keydown((event) => {
-  		
-  		//if (ui.controls.activeControl !== this.layername) return;
-  		switch(event.which){
-  			case 27:
-  				event.stopPropagation();
-  				ui.menu.toggle();
-  			break;
-        case 17:
-          TLControlPress = true;
-          break;
-  			default:
-  			break;
-  		}
-  	});
-    $(document).keyup((event)=>{
-      switch(event.which){
-        case 17:
-          TLControlPress = false;
-          break;
-        default:
-        break;
-      }
-    })
-	}
-	_deRegisterMouseListeners(){
-    this.removeListener('pointerup', this._pointerUp);
-	}
-	_deRegisterKeyboardListeners(){
-		$(document).off('keydown')
-    $(document).off('keyup');
-	}
-  async addTerrain(x,y,emit=false,batch=true){
-
-    this.highlightPosition(this.layerName,{gridX:x,gridY:y})
-    this.addToCostGrid(x,y);
-    if(game.user.isGM && emit){
-      if(!batch) await this.updateCostGridFlag();
-      const data = {
-        action:'addTerrain',
-        arguments:[x,y]
-      }
-      game.socket.emit('module.TerrainLayer', data)
-    }
-
-  }
-  async updateTerrain(x,y,emit=false,batch=true){
-    const layer = canvas.terrain.getHighlightLayer(this.layerName);
-     let [pxX,pxY] = canvas.grid.grid.getPixelsFromGridPosition(x,y)
-     const key = `${pxX}.${pxY}`;
-    let square = this.getSquare(layer,key)
-
-    let cost = this.costGrid[x][y];
-    if(cost.multiple < game.settings.get('TerrainLayer','maxMultiple')){
-      this.costGrid[x][y].multiple+=1;
-
-    }else{
-       this.costGrid[x][y].multiple=2;
-    }
-     square.getChildAt(0).text = `x${cost.multiple}`;
-    if(game.user.isGM && emit){
-      if(!batch) await this.updateCostGridFlag();
-      const data = {
-        action:'updateTerrain',
-        arguments:[x,y]
-      }
-      game.socket.emit('module.TerrainLayer', data)
-    }
-  }
-	_pointerUp(e) {
-    let pos = e.data.getLocalPosition(canvas.app.stage);
-    let gridPt = canvas.grid.grid.getGridPositionFromPixels(pos.x,pos.y);
-    let [pxX,pxY] = canvas.grid.grid.getPixelsFromGridPosition(gridPt[0],gridPt[1])
-    let [x,y] = gridPt;  //Normalize the returned data because it's in [y,x] format
-    let gsW = Math.round(canvas.grid.grid.w);
-    let gsH = Math.floor(canvas.grid.grid.h);
-    let gs = Math.min(gsW,gsH)
-    let gridPX = {x:Math.round(x*gsH),y:Math.round(y*gsW)}
-
-    const layer = canvas.terrain.getHighlightLayer(this.layerName);
-    if(canvas.grid.type == 0) {
-      alert('Difficult Terrain does not work with gridless maps.');
-      return false;
-    }
-    switch(e.data.button){
-      case 0:
-        
-        if(game.activeTool == 'addterrain' && !this.dragging){
-
-          if(this.terrainExists(pxX,pxY)){
-            this.updateTerrain(x,y,true,false);
-          }else{
-            this.addTerrain(x,y,true,false)
-          }
-        }else if(game.activeTool  == 'subtractterrain'){
-          if(this.terrainExists(pxX,pxY)){
-           this.removeTerrain(x,y,true,false);
-         }
-         
-        }
-      break;
-      default:
-      break;
-    }
-    this.dragging = false;
-	}
-  terrainExists(pxX,pxY){
-    const layer = canvas.terrain.getHighlightLayer(this.layerName);
-    const key = `${pxX}.${pxY}`;
-    if(layer.positions.has(key)) return true;
-    return false
-  }
-
-  addToCostGrid(x,y,multiple=2,type='ground'){
-   
-    if(typeof this.costGrid[x] === 'undefined')
-      this.costGrid[x] = {}
-    this.costGrid[x][y]={multiple,type};
-  }
-  async updateCostGridFlag(){
-    let x = duplicate(this.costGrid);
-    await canvas.scene.unsetFlag('TerrainLayer','costGrid');
-    await canvas.scene.setFlag('TerrainLayer','costGrid',x)
-  }
-	buildFromCostGrid(update=true){
-    canvas.terrain.highlight.children[0].removeChildren()
-    for(let x in this.costGrid){
-      for(let y in this.costGrid[x]){
-        
-        this.highlightPosition(this.layerName,{gridX:parseInt(x),gridY:parseInt(y),multiple:this.costGrid[x][y].multiple,update:update})
-      }
-    }
-  }
-  async resetGrid(emit=false){
-    this.getHighlightLayer(this.layerName).clear();
-    this.getHighlightLayer(this.layerName).removeChildren();
-    this.costGrid = {}
-    //only the GM who fired the event can set flag and emit, otherwise a game with two DM's might fire recursively.
-    if(game.user.isGM && emit){
-      await this.scene.unsetFlag('TerrainLayer','costGrid');
-
-      game.socket.emit('module.TerrainLayer',{action:'resetGrid',arguments:[]})
-    }
-   
-  }
-  selectSquares(coords){
-    const startPx = canvas.grid.grid.getCenter(coords.x,coords.y)
-    const startGrid = canvas.grid.grid.getGridPositionFromPixels(startPx[0],startPx[1])
-
-    const endPx =  canvas.grid.grid.getCenter(coords.x+coords.width,coords.y+coords.height)
-    const endGrid = canvas.grid.grid.getGridPositionFromPixels(endPx[0],endPx[1])
-
-    for(let x = startGrid[0];x<=endGrid[0];x++){
-      for(let y = startGrid[1];y<=endGrid[1];y++){
-      
-        if(game.activeTool == 'addterrain' && TLControlPress == false){
-          //this.highlightPosition(this.layerName,{gridX:y,gridY:x})
-          //this.addToCostGrid(x,y);
-          if(!this.terrainExists(y*canvas.dimensions.size,x*canvas.dimensions.size))
-            this.addTerrain(x,y,true,true)
-        }else if(game.activeTool == 'subtractterrain' || TLControlPress){
-          
-
-          this.removeTerrain(x,y,true,true)
-         
-        }
-      }
-    }
-    this.updateCostGridFlag();
-
-  }
- 
-  async removeTerrain(x,y,emit=false,batch=true){
-    console.log('removeTerrain')
-    const [pxX,pxY] = canvas.grid.grid.getPixelsFromGridPosition(x,y)
-    const layer = canvas.terrain.getHighlightLayer(this.layerName);
-    const key = `${pxX}.${pxY}`;
-    if(!layer.positions.has(key)) return false;
-    let square = this.getSquare(layer,key);
-    square.destroy();
-    layer.positions.delete(key);
-    this.removeFromCostGrid(x,y)
-    if(game.user.isGM && emit){
-     if(!batch) await this.updateCostGridFlag();
-      const data = {
-        action:'removeTerrain',
-        arguments:[x,y]
-      }
-      game.socket.emit('module.TerrainLayer', data)
-    }
-  }
-  removeFromCostGrid(x,y,emit=false){
-    if(typeof this.costGrid[x] == 'undefined') return false;
-    if(typeof this.costGrid[x][y] == 'undefined') return false;
-      
-    delete this.costGrid[x][y];
-    
-  }
-  getSquare(layer,key){
-     let square = layer.children.find((x)=>{
-      return x.thePosition == key
-    })
-     return square || false;
-  }
-  _onDragLeftStart(e){
-    this.dragging = true;
-  }
-
-  _onDragLeftMove(e){
-    const isSelect = ["addterrain","subtractterrain"].includes(game.activeTool);
-    if ( isSelect ) return this._onDragSelect(e);
-  }
-  _onDragSelect(event) {
-
-    // Extract event data
-    const {origin, destination} = event.data;
-
-    // Determine rectangle coordinates
-    let coords = {
-      x: Math.min(origin.x, destination.x),
-      y: Math.min(origin.y, destination.y),
-      width: Math.abs(destination.x - origin.x),
-      height: Math.abs(destination.y - origin.y)
-    };
-
-    // Draw the select rectangle
-    canvas.controls.drawSelect(coords);
-    event.data.coords = coords;
-
-  }
-  _onDragLeftDrop(e){
-    const tool = game.activeTool;
-    // Conclude a select event
-
-    const isSelect = ["addterrain","subtractterrain"].includes(tool);
-    if ( isSelect ) {
-      canvas.controls.select.clear();
-      canvas.controls.select.active = false;
-      if ( tool === "addterrain" || tool === "subtractterrain") return this.selectSquares(e.data.coords);
-    }
-    canvas.controls.select.clear();
-  }
-  _onClickRight(e){
-    /* DELETE TERRAIN SQUARE */
-    let pos = e.data.getLocalPosition(canvas.app.stage);
-    let gridPt = canvas.grid.grid.getGridPositionFromPixels(pos.x,pos.y);
-    let px = canvas.grid.grid.getPixelsFromGridPosition(gridPt[0],gridPt[1])
-    //Normalize the returned data because it's in [y,x] format
-    let [x,y] = gridPt;
-
-    let key = `${px[0]}.${px[1]}`;
-    const layer = canvas.terrain.getHighlightLayer(this.layerName);
-    let square = this.getSquare(layer,key)
-    if(game.activeTool == 'addterrain' && square){
-     
-      this.removeTerrain(x,y,true,false);
-      
-    }
-  }
-  
-  _onDragRightMove(event) {
-
-    // Extract event data
-    const DRAG_SPEED_MODIFIER = 0.8;
-    const {cursorTime, origin, destination} = event.data;
-    const dx = destination.x - origin.x;
-    const dy = destination.y - origin.y;
-
-    // Update the client's cursor position every 100ms
-    const now = Date.now();
-    if ( (now - (cursorTime || 0)) > 100 ) {
-      if ( canvas.controls ) canvas.controls._onMoveCursor(event, destination);
-      event.data.cursorTime = now;
-    }
-
-    // Pan the canvas
-    canvas.pan({
-      x: canvas.stage.pivot.x - (dx * DRAG_SPEED_MODIFIER),
-      y: canvas.stage.pivot.y - (dy * DRAG_SPEED_MODIFIER)
-    });
-
-    
-  }
-  activate() {
-
-    super.activate();
-     const options = this.constructor.layerOptions;
-    this.interactive = true;
-    this._registerMouseListeners();
-    this._registerKeyboardListeners();
-    //canvas.activeLayer = canvas.terrain;
-  }
-	/**
-	* Actions upon layer becoming inactive
-	*/
-	deactivate() {
-		super.deactivate();
-		this.interactive = false;
-		this._deRegisterMouseListeners();
-		this._deRegisterKeyboardListeners();
-
-	}
 }

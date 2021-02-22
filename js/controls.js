@@ -57,45 +57,31 @@ Hooks.on('getSceneControlButtons', (controls) => {
 	  	})
 	}
 });
-Hooks.on('init',()=>{
-	game.settings.register('TerrainLayer', 'scale', {
-		name: "TerrainLayer.scale-s",
-		hint: "TerrainLayer.scale-l",
-		scope: "world",
-		config: true,
-		default: 1,
-		type: Number,
-		range:{
-			min:0.4,
-			max:1,
-			step:0.1
-		},
-      	onChange: () => {
-      		canvas.terrain.buildFromCostGrid();
-      	}
-    });
-    game.settings.register('TerrainLayer', 'opacity', {
-    	name: "TerrainLayer.opacity-s",
-		hint: "TerrainLayer.opacity-l",
-		scope: "world",
-		config: true,
-		default: 1,
-		type: Number,
-		range:{
-			min:0.3,
-			max:1,
-			step:0.1
-		},
-      	onChange: () => {
-      		canvas.terrain.buildFromCostGrid();
-      	}
-    });
-    game.settings.register('TerrainLayer', 'maxMultiple', {
-    	name: "TerrainLayer.opacity-s",
-		hint: "TerrainLayer.opacity-l",
-		scope: "world",
-		config: true,
-		default: 3,
-		type: Number
-    });
+Hooks.on('renderSceneControls', (controls) => {
+	if (canvas != null) {
+		canvas.terrain.visible = (canvas.terrain.showterrain || controls.activeControl == 'terrain');
+
+		if (controls.activeControl == 'terrain') {
+			if (canvas.terrain.toolbar == undefined)
+				canvas.terrain.toolbar = new TerrainLayerToolBar();
+			canvas.terrain.toolbar.render(true);
+			//$('#terrainlayer-tools').toggle(controls.activeTool == 'addterrain');
+		} else {
+			if (!canvas.terrain.toolbar)
+				return;
+			canvas.terrain.toolbar.close();
+		}
+	}
+});
+Hooks.on('renderTerrainLayerToolBar', () => {
+	const tools = $(canvas.terrain.toolbar.form).parent();
+	if (!tools)
+		return;
+	const controltools = $('li[data-control="terrain"] ol.control-tools');
+	const offset = controltools.offset();
+	tools.css({ top: `${offset.top}px`, left: `${offset.left + controltools.width() + 6}px` });
+});
+
+Hooks.on('init', () => {
+	
 })

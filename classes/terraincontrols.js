@@ -1,4 +1,4 @@
-import { TerrainLayer } from './terrainlayer2.js';
+import { TerrainLayer } from './terrainlayer.js';
 
 export class TerrainLayerToolBar extends FormApplication {
     constructor() {
