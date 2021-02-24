@@ -56,6 +56,16 @@ export class TerrainLayer extends PlaceablesLayer {
         return this._costGrid;
     }
 
+    cost(pts, options) {
+        let cost = 0;
+        for (let pt of pts) {
+            let terrain = this.placeables.find(t => { return t.data.x == pt.x && t.data.y == pt.y; });
+            cost += (terrain?.cost(options) || 1);
+        }
+
+        return cost;
+    }
+
     /**
      * Tile objects on this layer utilize the TileHUD
      * @type {TerrainHUD}
@@ -139,7 +149,7 @@ export class TerrainLayer extends PlaceablesLayer {
         if (this.objects) this.objects.visible = true;
     }
 
-    async updateMany(data, options = {}) {
+    async updateMany(data, options = {diff: true}) {
         const user = game.user;
 
         const pending = new Map();
@@ -182,7 +192,7 @@ export class TerrainLayer extends PlaceablesLayer {
             flags[key] = u;
         }
 
-        canvas.scene.update(flags);
+        canvas.scene.update(flags); //, { diff: false }
     }
 
     async deleteMany(ids, options = {}) {

@@ -50,11 +50,26 @@ export class TerrainHUD extends BasePlaceableHUD {
   */
 
     _onHandleClick(increase, event) {
+        const updates = this.layer.controlled.map(o => {
+            let mult = o.data.multiple;
+            let idx = TerrainLayer.multipleOptions.indexOf(mult);
+            idx = Math.clamped((increase ? idx + 1 : idx - 1), 0, TerrainLayer.multipleOptions.length - 1);
+            return { _id: o.id, multiple: TerrainLayer.multipleOptions[idx] };
+        });
+
+        this.layer.updateMany(updates).then(() => {
+            for (let terrain of this.layer.controlled) {
+                let data = updates.find(u => { return u._id == terrain.data._id });
+                terrain.update(data, { save: false });
+            }
+        });
+        
+        /*
         let mult = this.object.data.multiple;
         let idx = TerrainLayer.multipleOptions.indexOf(mult);
         idx = Math.clamped((increase ? idx + 1 : idx - 1), 0, TerrainLayer.multipleOptions.length - 1);
         this.object.update({ multiple: TerrainLayer.multipleOptions[idx] });
-        this.object.refresh();
+        this.object.refresh();*/
     }
 
     async _onToggleVisibility(event) {
@@ -67,7 +82,12 @@ export class TerrainHUD extends BasePlaceableHUD {
         });
 
         // Update all objects
-        await this.layer.updateMany(updates);
+        await this.layer.updateMany(updates).then(() => {
+            for (let terrain of this.layer.controlled) {
+                let data = updates.find(u => { return u._id == terrain.data._id });
+                terrain.update(data, { save: false });
+            }
+        });
         event.currentTarget.classList.toggle("active", !isHidden);
     }
 

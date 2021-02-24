@@ -99,9 +99,9 @@ export class Terrain extends PlaceableObject {
         if (this.data._id == undefined)
             this.data._id = makeid();
 
-        if (isNaN(parseInt(this.data.multiple)))
+        if (isNaN(parseFloat(this.data.multiple)))
             this.data.multiple = 2;
-        this.data.multiple = parseInt(this.data.multiple);
+        this.data.multiple = parseFloat(this.data.multiple);
 
         // Constrain canvas coordinates
         if (!canvas || !this.scene?.active) return;
@@ -136,15 +136,16 @@ export class Terrain extends PlaceableObject {
         this.frame.border = this.frame.addChild(new PIXI.Graphics());
 
         // Create the tile container and it's child elements
-        let mult = Math.clamped(this.data.multiple, 2, 4);
+        let mult = Math.clamped(this.data.multiple, 0.5, 4);
         this.terrain = this.addChild(new PIXI.Container());
-        this.texture = await loadTexture('modules/TerrainLayer/img/square' + mult + 'x.svg');
+        let gridtype = (canvas.grid.type == 1 ? 'square' : (canvas.grid.type == 2 || canvas.grid.type == 3 ? 'hex-a' : 'hex-b'));
+        this.texture = await loadTexture(`modules/TerrainLayer/img/${gridtype}.${mult}x.svg`);
         this.terrain.img = this.terrain.addChild(this._drawPrimarySprite(this.texture));
         this.terrain.img.blendMode = PIXI.BLEND_MODES.OVERLAY;
         //this.terrain.img = this.addChild(new PIXI.Graphics);//new TerrainSquare());
 
         let fontsize = (s / 3);
-        this.terrain.text = new PIXI.Text('x' + mult, { fontFamily: 'Arial', fontSize: fontsize, fill: 0xffffff, opacity: 1, align: 'center' });
+        this.terrain.text = new PIXI.Text('x' + mult, { fontFamily: 'Arial', fontSize: fontsize, fill: 0xffffff, align: 'center' });
         this.terrain.text.blendMode = PIXI.BLEND_MODES.OVERLAY;
         this.terrain.text.anchor.set(0.5, 0.5);
         this.terrain.text.x = this.terrain.text.y = mid;
@@ -176,12 +177,12 @@ export class Terrain extends PlaceableObject {
             const img = this.terrain.img;
 
             // Set the tile dimensions and mirroring
-            img.width = s;
-            img.height = s;
+            img.width = gsW;
+            img.height = gsH;
 
             bounds = this.terrain.getLocalBounds(undefined, true);
         } else {
-            bounds = new NormalizedRectangle(0, 0, s, s);
+            bounds = new NormalizedRectangle(0, 0, gsW, gsH);
         }
 
         /*
@@ -199,10 +200,10 @@ export class Terrain extends PlaceableObject {
         terrainSquare.closePath();
         terrainSquare.blendMode = PIXI.BLEND_MODES.OVERLAY;*/
 
+        this.terrain.text.opacity = (this.data.hidden ? 0.3 : setting('opacity'));
         this.terrain.text.visible = setting('showText');
 
-        this.terrain.img.alpha = 0.5; //setting('opacity');
-        this.terrain.alpha = 1;
+        this.terrain.img.alpha = (this.data.hidden ? 0.3 : setting('opacity'));
 
         // Set Tile position
         let px = canvas.grid.grid.getPixelsFromGridPosition(this.data.y, this.data.x);
@@ -243,16 +244,25 @@ export class Terrain extends PlaceableObject {
         const o = Math.round(h / 2);
 
         let s = canvas.dimensions.size;
+        let gsW = canvas.grid.grid.w;
+        let gsH = canvas.grid.grid.h;
         //let [x,y] = canvas.grid.grid.getPixelsFromGridPosition(this.data.y, this.data.x);
         let x = 0;
         let y = 0;
         border.clear()
-            .lineStyle(t, 0x000000, 1.0).drawRoundedRect(x - o, y - o, s + h, s + h, 3)
-            .lineStyle(h, bc, 1.0).drawRoundedRect(x - o, y - o, s + h, s + h, 3);
+            .lineStyle(t, 0x000000, 1.0).drawRoundedRect(x - o, y - o, gsW + h, gsH + h, 3)
+            .lineStyle(h, bc, 1.0).drawRoundedRect(x - o, y - o, gsW + h, gsH + h, 3);
         border.visible = this._hover || this._controlled;
     }
 
     /* -------------------------------------------- */
+
+    cost(options) {
+        if (this.data.hidden) {
+            return 1;
+        } else
+            return this.data.multiple;
+    }
 
     /** @override */
     activateListeners() {
@@ -314,6 +324,7 @@ export class Terrain extends PlaceableObject {
      * Create a preview tile with a background texture instead of an image
      * @return {Tile}
      */
+    /*
     static createPreview(data) {
         const terrain = new Terrain(mergeObject({
             x: 0,
@@ -332,18 +343,27 @@ export class Terrain extends PlaceableObject {
         });
         return terrain;
     }
+    */
 
-    async update(data, options) {
-        let objectdata = duplicate(canvas.scene.getFlag("TerrainLayer", "terrain" + this.data._id));
+    async update(data, options = {save: true}) {
         //update this object
         mergeObject(this.data, data);
         delete this.data.id; //remove the id if I've accidentally added it.  We should be using _id
-        //update the data and save it to the scene
-        mergeObject(objectdata, this.data);
-        await canvas.scene.setFlag("TerrainLayer", "terrain" + this.data._id, objectdata);
+        if (options.save === true) {
+            //update the data and save it to the scene
+            let objectdata = duplicate(canvas.scene.getFlag("TerrainLayer", `terrain${this.data._id}`));
+            mergeObject(objectdata, this.data);
+            //let updates = {};
+            //updates['flags.TerrainLayer.terrain' + this.data._id + '.multiple'] = data.multiple;
+            let key = `flags.TerrainLayer.terrain${this.data._id}`;
+            await canvas.scene.update({ [key]: objectdata }, { diff: false });
+        }
+        //await canvas.scene.setFlag("TerrainLayer", "terrain" + this.data._id, objectdata, {diff: false});
         //if the multiple has changed then update the image
         if (data.multiple != undefined) {
-            this.texture = await loadTexture('modules/TerrainLayer/img/square' + this.data.multiple + 'x.svg');
+            let mult = this.data.multiple;
+            let gridtype = (canvas.grid.type == 1 ? 'square' : (canvas.grid.type == 2 || canvas.grid.type == 3 ? 'hex-a' : 'hex-b'));
+            this.texture = await loadTexture(`modules/TerrainLayer/img/${gridtype}.${mult}x.svg`);
             this.terrain.removeChild(this.terrain.img);
             this.terrain.img = this.terrain.addChild(this._drawPrimarySprite(this.texture));
         }

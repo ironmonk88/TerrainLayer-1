@@ -83,5 +83,5 @@ Hooks.on('renderTerrainLayerToolBar', () => {
 });
 
 Hooks.on('init', () => {
-	
+
 })
