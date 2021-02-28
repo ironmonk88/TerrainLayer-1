@@ -1,61 +1,47 @@
+import { TerrainLayerToolBar } from '../classes/terraincontrols.js';
+
 Hooks.on('getSceneControlButtons', (controls) => {
-	if (game.user.isGM && canvas != null) {
-	    controls.push({
-			name: 'terrain',
-			title: game.i18n.localize('EM.sf'),
-			icon: 'fas fa-mountain',
-			layer: 'TerrainLayer',
-			tools: [
-				{
-		        	name: 'terraintoggle',
-		        	title: game.i18n.localize('EM.onoff'),
-		        	icon: 'fas fa-eye',
-		        	onClick: () => {
-		        	  canvas.terrain.toggle(true);
-		        	},
-		        	active: canvas.terrain.highlight.children[0].visible,
-		        	toggle: true
-		        },
-				{
-					name: 'addterrain',
-					title:'EM.select',
-					icon:'fas fa-plus-square'
+	const isGM = game.user.isGM;
+	controls.push({
+		name: 'terrain',
+		title: game.i18n.localize('TerrainLayer.sf'),
+		icon: 'fas fa-mountain',
+		visible: isGM,
+		layer: 'TerrainLayer',
+		activeTool: 'select',
+		tools: [
+			{
+				name: 'select',
+				title: 'TerrainLayer.select',
+				icon: 'fas fa-expand'
+			},
+			{
+				name: 'addterrain',
+				title: 'TerrainLayer.add',
+				icon: 'fas fa-marker'
+			},
+			{
+				name: 'terraintoggle',
+				title: game.i18n.localize('TerrainLayer.onoff'),
+				icon: 'fas fa-eye',
+				onClick: () => {
+					canvas.terrain.toggle(null, true);
 				},
-				{
-					name:'subtractterrain',
-					title:'EM.subtract',
-					icon:'fas fa-minus-square'
-				},
-				{
-		          name: 'clearterrain',
-		          title: game.i18n.localize('EM.reset'),
-		          icon: 'fas fa-trash',
-		          onClick: () => {
-		            const dg = new Dialog({
-		              title: game.i18n.localize('EM.reset'),
-		              content: game.i18n.localize('EM.confirmReset'),
-		              buttons: {
-		                reset: {
-		                  icon: '<i class="fas fa-trash"></i>',
-		                  label: 'Reset',
-		                  callback: () => canvas.terrain.resetGrid(true),
-		                },
-		                
-		                cancel: {
-		                  icon: '<i class="fas fa-times"></i>',
-		                  label: 'Cancel',
-		                },
-		              },
-		              default: 'cancel',
-		            });
-		            dg.render(true);
-		          },
-		          button: true,
-		        },
-			],
-			activeTool:'addterrain'
-	  	})
-	}
+				active: (canvas?.terrain?.showterrain || game.settings.get("TerrainLayer", "showterrain")),
+				toggle: true
+			},
+			{
+				name: 'clearterrain',
+				title: game.i18n.localize('TerrainLayer.reset'),
+				icon: 'fas fa-trash',
+				visible: isGM,
+				onClick: () => canvas.terrain.deleteAll(),
+				button: true,
+			}
+		]
+	});
+	//show the terrain if show button is toggled, or if the current tool is the terrain tool
+	//canvas.terrain.highlight.children[0].visible = (canvas.terrain.showterrain || controls["terrain"].active);
 });
 Hooks.on('renderSceneControls', (controls) => {
 	if (canvas != null) {
