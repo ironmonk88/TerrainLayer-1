@@ -1,7 +1,8 @@
 {
   "TerrainLayer.ok": "OK",
   "TerrainLayer.sf": "Terrain Grid",
-  "TerrainLayer.select": "Add Difficult Terrain",
+  "TerrainLayer.select": "Select Difficult Terrain",
+  "TerrainLayer.add": "Add Difficult Terrain",
   "TerrainLayer.subtract": "Remove Difficult Terrain",
   "TerrainLayer.fill": "Fill Grid",
   "TerrainLayer.confirmFill": "This will mark every grid space as difficult terrain, overwriting any spots you've marked.",
