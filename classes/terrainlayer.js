@@ -49,7 +49,7 @@ export class TerrainLayer extends PlaceablesLayer {
 /* -------------------------------------------- */
 
     get costGrid() {
-        log('costGrid is deprecated, please use the cost function instead');
+        console.warn('costGrid is deprecated, please use the cost function instead');
         if (this._costGrid == undefined) {
             this.buildCostGrid(canvas.scene.data.terrain);
         }
@@ -58,6 +58,7 @@ export class TerrainLayer extends PlaceablesLayer {
 
     cost(pts, options) {
         let cost = 0;
+        pts = pts instanceof Array ? pts : [pts];
         for (let pt of pts) {
             let terrain = this.placeables.find(t => { return t.data.x == pt.x && t.data.y == pt.y; });
             cost += (terrain?.cost(options) || 1);
@@ -92,6 +93,17 @@ export class TerrainLayer extends PlaceablesLayer {
                         canvas.scene.unsetFlag('TerrainLayer', k);
                 }
             };
+
+            //convert the old data
+            if (canvas.scene.data.flags?.TerrainLayer.costGrid) {
+                let grid = canvas.scene.getFlag('TerrainLayer', 'costGrid');
+                for (let x in grid) {
+                    for (let y in grid[x]) {
+                        this.createTerrain({ x: parseInt(x), x: parseInt(y), multiple: grid[x][y].multiple});
+                    }
+                }
+                //canvas.scene.unsetFlag('TerrainLayer', 'costGrid');
+            }
         }
 
         const d = canvas.dimensions;
@@ -193,6 +205,8 @@ export class TerrainLayer extends PlaceablesLayer {
         }
 
         canvas.scene.update(flags); //, { diff: false }
+
+        this._costGrid = null;
     }
 
     async deleteMany(ids, options = {}) {
@@ -214,13 +228,16 @@ export class TerrainLayer extends PlaceablesLayer {
 
         this.storeHistory("delete", originals);
 
+        this._costGrid = null;
+
         canvas.scene.update(updates);
     }
 
     _onClickLeft(event) {
         super._onClickLeft(event);
         if (game.activeTool == 'addterrain') {
-            this.createTerrain(event.data.getLocalPosition(canvas.app.stage));
+            let pos = event.data.getLocalPosition(canvas.app.stage);
+            this.createTerrain({ x: pos.x, y: pos.y });
             //make sure there isn't a terrain already there
             /*
             let pos = event.data.getLocalPosition(canvas.app.stage);
@@ -246,7 +263,8 @@ export class TerrainLayer extends PlaceablesLayer {
         if (game.activeTool == "select")
             return this._onDragSelect(event);
         else if (game.activeTool == 'addterrain') {
-            this.createTerrain(event.data.getLocalPosition(canvas.app.stage));
+            let pos = event.data.getLocalPosition(canvas.app.stage);
+            this.createTerrain({ x: pos.x, y: pos.y });
             /*let pos = event.data.getLocalPosition(canvas.app.stage);
             let gridPt = canvas.grid.grid.getGridPositionFromPixels(pos.x, pos.y);
             let [y, x] = gridPt;  //Normalize the returned data because it's in [y,x] format
@@ -316,61 +334,23 @@ export class TerrainLayer extends PlaceablesLayer {
         return changed;
     }
 
-    createTerrain(pos) {
-        let gridPt = canvas.grid.grid.getGridPositionFromPixels(pos.x, pos.y);
+    createTerrain(data, options = { }) {
+        let gridPt = canvas.grid.grid.getGridPositionFromPixels(data.x, data.y);
         let [y, x] = gridPt;  //Normalize the returned data because it's in [y,x] format
 
         if (!this.terrainExists(x, y)) {
             //const terrain = new Terrain({ x: x, y: y });
             //terrain.draw();
             //this.constructor.placeableClass.create(terrain.data);
-            this.constructor.placeableClass.create({ x: x, y: y, multiple: this.defaultmultiple });
+            data.x = x;
+            data.y = y;
+            data.multiple = data.multiple || this.defaultmultiple;
+            this.constructor.placeableClass.create(data, options);
         }
         this._costGrid = null;
     }
 
-
-    /* -------------------------------------------- */
-
-    /**
-     * Handle drop events for Tile data on the Tiles Layer
-     * @param {DragEvent} event     The concluding drag event
-     * @param {object} data         The extracted Tile data
-     * @private
-     */
-    async _onDropTerrainData(event, data) {
-        if (!data.img) return;
-        if (!this._active) this.activate();
-
-        // Determine the tile size
-        const tex = await loadTexture(data.img);
-        const ratio = canvas.dimensions.size / (data.terrainSize || canvas.dimensions.size);
-        data.width = tex.baseTexture.width * ratio;
-        data.height = tex.baseTexture.height * ratio;
-
-        // Validate that the drop position is in-bounds and snap to grid
-        if (!canvas.grid.hitArea.contains(data.x, data.y)) return false;
-        data.x = data.x - (data.width / 2);
-        data.y = data.y - (data.height / 2);
-        if (!event.shiftKey) mergeObject(data, canvas.grid.getSnappedPosition(data.x, data.y));
-
-        // Create the tile as hidden if the ALT key is pressed
-        if (event.altKey) data.hidden = true;
-
-        // Create the Tile
-        return this.constructor.placeableClass.create(data);
-    }
-
     terrainExists(pxX, pxY) {
         return canvas.scene.data.terrain.find(t => { return t.x == pxX && t.y == pxY }) != undefined;
-    }
-}
-
-class TerrainSquare extends PIXI.Graphics {
-    constructor(coord, ...args) {
-        super(...args);
-        this.coord = coord;
-        let topLeft = canvas.grid.grid.getPixelsFromGridPosition(coord.x, coord.y)
-        this.thePosition = `${topLeft[0]}.${topLeft[1]}`;
     }
 }
