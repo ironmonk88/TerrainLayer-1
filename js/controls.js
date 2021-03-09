@@ -6,9 +6,9 @@ Hooks.on('getSceneControlButtons', (controls) => {
 		name: 'terrain',
 		title: game.i18n.localize('TerrainLayer.sf'),
 		icon: 'fas fa-mountain',
-		visible: isGM,
+		visible: isGM && (canvas?.grid?.type !== 0),
 		layer: 'TerrainLayer',
-		activeTool: 'select',
+		activeTool: 'addterrain',
 		tools: [
 			{
 				name: 'select',
@@ -67,7 +67,3 @@ Hooks.on('renderTerrainLayerToolBar', () => {
 	const offset = controltools.offset();
 	tools.css({ top: `${offset.top}px`, left: `${offset.left + controltools.width() + 6}px` });
 });
-
-Hooks.on('init', () => {
-
-})

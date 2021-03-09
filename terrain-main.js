@@ -30,20 +30,20 @@ Hooks.on('init', () => {
 	Token.prototype._onDragLeftStart = function (event) {
 		oldOnDragLeftStart.apply(this, [event])
 		if (canvas != null)
-			canvas.terrain.visible = true;
+			canvas.terrain.visible = (canvas.grid.type != 0);
 	}
 
 	let oldOnDragLeftDrop = Token.prototype._onDragLeftDrop;
 	Token.prototype._onDragLeftDrop = function (event) {
 		if (canvas != null)
-			canvas.terrain.visible = (canvas.terrain.showterrain || ui.controls.activeControl == 'terrain');
+			canvas.terrain.visible = (canvas.grid.type != 0 && (canvas.terrain.showterrain || ui.controls.activeControl == 'terrain'));
 		oldOnDragLeftDrop.apply(this, [event]);
 	}
 	let oldOnDragLeftCancel = Token.prototype._onDragLeftCancel;
 	Token.prototype._onDragLeftCancel = function (event) {
-		event.stopPropagation();
+		//event.stopPropagation();
 		if (canvas != null)
-			canvas.terrain.visible = (canvas.terrain.showterrain || ui.controls.activeControl == 'terrain');
+			canvas.terrain.visible = (canvas.grid.type != 0 && (canvas.terrain.showterrain || ui.controls.activeControl == 'terrain'));
 
 		oldOnDragLeftCancel.apply(this, [event])
 	}

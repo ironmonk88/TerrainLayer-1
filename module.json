@@ -5,7 +5,7 @@
   "authors": [{"name":"Will Saunders","email":"willsaunders1014@gmail.com" }, {"name":"IronMonk, ironmonk88#4075" }],
   "version": "1.0.2",
   "minimumCoreVersion": "0.6.6",
-  "compatibleCoreVersion":"0.7.5",
+  "compatibleCoreVersion":"0.7.9",
   "scripts":[
   ],
   "esmodules": [
