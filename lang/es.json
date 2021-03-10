@@ -1,7 +1,8 @@
 {
     "TerrainLayer.ok": "OK",
     "TerrainLayer.sf": "Cuadrícula del Terreno",
-    "TerrainLayer.select":"Agregar Terreno Dificil",
+    "TerrainLayer.select":"Seleccionar Terreno Dificil",
+    "TerrainLayer.add":"Añadir Terreno Dificil",
     "TerrainLayer.subtract":"Eliminar Terreno Dificil",
     "TerrainLayer.fill":"Llenar Cuadrícula",
     "TerrainLayer.confirmFill":"Este acción marcará todos de las cajas en la cuadrícula con el terreno difícil y sobrescribirá todas de las cajas previamente marcadas.",
