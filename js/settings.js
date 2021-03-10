@@ -1,7 +1,7 @@
 export const registerSettings = function () {
 	game.settings.register('TerrainLayer', 'opacity', {
-		name: "TerrainLayer.opacity-s",
-		hint: "TerrainLayer.opacity-l",
+		name: "TerrainLayer.opacity.name",
+		hint: "TerrainLayer.opacity.hint",
 		scope: "world",
 		config: true,
 		default: 1,
@@ -13,8 +13,8 @@ export const registerSettings = function () {
 		}
 	});
 	game.settings.register('TerrainLayer', 'showText', {
-		name: "TerrainLayer.showtext-s",
-		hint: "TerrainLayer.showtext-l",
+		name: "TerrainLayer.showText.name",
+		hint: "TerrainLayer.showText.hint",
 		scope: "world",
 		config: true,
 		default: false,

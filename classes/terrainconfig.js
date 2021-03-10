@@ -1,4 +1,4 @@
-import { TerrainLayer } from './terrainlayer.js';
+import { TerrainLayer, i18n } from './terrainlayer.js';
 
 export class TerrainConfig extends FormApplication {
 
@@ -7,7 +7,7 @@ export class TerrainConfig extends FormApplication {
         return mergeObject(super.defaultOptions, {
             id: "terrain-config",
             classes: ["sheet", "terrain-sheet"],
-            title: "Terrain Configuration",
+            title: i18n("TerrainLayer.Configuration"),
             template: "modules/TerrainLayer/templates/terrain-config.html",
             width: 400,
             submitOnChange: true

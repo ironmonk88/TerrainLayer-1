@@ -11,13 +11,13 @@ Hooks.on('getSceneControlButtons', (controls) => {
 		activeTool: 'addterrain',
 		tools: [
 			{
-				name: game.i18n.localize('TerrainLayer.select'),
-				title: 'TerrainLayer.select',
+				name: 'select',
+				title: game.i18n.localize('TerrainLayer.select'),
 				icon: 'fas fa-expand'
 			},
 			{
-				name: game.i18n.localize('TerrainLayer.add'),
-				title: 'TerrainLayer.add',
+				name: 'addterrain',
+				title: game.i18n.localize('TerrainLayer.add'),
 				icon: 'fas fa-marker'
 			},
 			{

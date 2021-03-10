@@ -4,8 +4,15 @@
   "TerrainLayer.add": "Add Difficult Terrain",
   "TerrainLayer.onoff": "Enable/Disable Terrain",
   "TerrainLayer.reset": "Reset Terrain",
-  "TerrainLayer.opacity-s": "Terrain Icon Opacity",
-  "TerrainLayer.opacity-l": "Opacity of the Icon and Number.",
-  "TerrainLayer.showtext-s": "Show Text",
-  "TerrainLayer.showtext-l": "Show the text of how difficult the terrain is."
+  "TerrainLayer.IncreaseCost": "Increase Cost",
+  "TerrainLayer.DecreaseCost": "Decrease Cost",
+  "TerrainLayer.Cost": "Cost",
+  "TerrainLayer.Configure": "Configure this scene terrain.",
+  "TerrainLayer.Configuration": "Terrain Configuration",
+  "TerrainLayer.UpdateTerrain": "Update Terrain",
+
+  "TerrainLayer.opacity.name": "Terrain Icon Opacity",
+  "TerrainLayer.opacity.hint": "Opacity of the Icon and Number.",
+  "TerrainLayer.showText.name": "Show Text",
+  "TerrainLayer.showtext.hint": "Show the text of how difficult the terrain is."
 }
