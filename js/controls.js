@@ -11,12 +11,12 @@ Hooks.on('getSceneControlButtons', (controls) => {
 		activeTool: 'addterrain',
 		tools: [
 			{
-				name: 'select',
+				name: game.i18n.localize('TerrainLayer.select'),
 				title: 'TerrainLayer.select',
 				icon: 'fas fa-expand'
 			},
 			{
-				name: 'addterrain',
+				name: game.i18n.localize('TerrainLayer.add'),
 				title: 'TerrainLayer.add',
 				icon: 'fas fa-marker'
 			},
@@ -35,7 +35,9 @@ Hooks.on('getSceneControlButtons', (controls) => {
 				title: game.i18n.localize('TerrainLayer.reset'),
 				icon: 'fas fa-trash',
 				visible: isGM,
-				onClick: () => canvas.terrain.deleteAll(),
+				onClick: () => {
+					canvas.terrain.deleteAll()
+				},
 				button: true,
 			}
 		]
