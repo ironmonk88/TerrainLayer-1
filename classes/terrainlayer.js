@@ -18,6 +18,10 @@ export let setting = key => {
     return game.settings.get("TerrainLayer", key);
 };
 
+export let makeid = () => {
+    return TerrainLayer.makeid();
+}
+
 export class TerrainLayer extends PlaceablesLayer {
     constructor() {
         super();
@@ -40,6 +44,16 @@ export class TerrainLayer extends PlaceablesLayer {
 
     static get multipleOptions() {
         return [0.5, 2, 3, 4];
+    }
+
+    static makeid = function () {
+        var result = '';
+        var characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        var charactersLength = characters.length;
+        for (var i = 0; i < 16; i++) {
+            result += characters.charAt(Math.floor(Math.random() * charactersLength));
+        }
+        return result;
     }
 
     static multipleText(multiple) {
@@ -100,7 +114,12 @@ export class TerrainLayer extends PlaceablesLayer {
             let grid = canvas.scene.getFlag('TerrainLayer', 'costGrid');
             for (let y in grid) {
                 for (let x in grid[y]) {
-                    this.createTerrain({ x: parseInt(x), y: parseInt(y), multiple: grid[y][x].multiple });
+                    if (canvas.scene.data.terrain.find(t => { return t.x == x && t.y == y }) == undefined) {
+                        let id = makeid();
+                        let data = { _id: id, x: parseInt(x), y: parseInt(y), multiple: grid[y][x].multiple };
+                        canvas.scene.data.terrain.push(data);
+                        await canvas.scene.setFlag('TerrainLayer', 'terrain' + id, data);
+                    }
                 }
             }
             //canvas.scene.unsetFlag('TerrainLayer', 'costGrid');
@@ -217,16 +236,19 @@ export class TerrainLayer extends PlaceablesLayer {
         for (let id of ids) {
             const object = this.get(id);
             log('Removing terrain', object.data.x, object.data.y);
-            originals.push(object);
+            if(!options.isUndo)
+                originals.push(object.data);
             this.objects.removeChild(object);
             delete this._controlled[id];
             object._onDelete(options, game.user.id);
             object.destroy({ children: true });
+            canvas.scene.data.terrain.findSplice(t => { return t._id == id; });
             let key = `flags.TerrainLayer.-=terrain${id}`;
             updates[key] = null;
         }
 
-        this.storeHistory("delete", originals);
+        if (!options.isUndo)
+            this.storeHistory("delete", originals);
 
         this._costGrid = null;
 
@@ -236,6 +258,7 @@ export class TerrainLayer extends PlaceablesLayer {
     _onClickLeft(event) {
         super._onClickLeft(event);
         if (game.activeTool == 'addterrain') {
+            this.originals = [];
             let pos = event.data.getLocalPosition(canvas.app.stage);
             let gridPt = canvas.grid.grid.getGridPositionFromPixels(pos.x, pos.y);
             let [y, x] = gridPt;  //Normalize the returned data because it's in [y,x] format
@@ -304,10 +327,11 @@ export class TerrainLayer extends PlaceablesLayer {
 
     _onDragLeftDrop(e) {
         if (game.activeTool == "select") {
-            canvas._onDragLeftDrop(event);
+            canvas._onDragLeftDrop(e);
         }
-        else if (game.activeTool != 'addterrain') {
-            super._onDragLeftDrop(event);
+        else if (game.activeTool == 'addterrain') {
+            this.storeHistory("create", this.originals);
+            delete this.originals;
         }
     }
 
@@ -343,7 +367,10 @@ export class TerrainLayer extends PlaceablesLayer {
     createTerrain(data, options = { }) {
         if (!this.terrainExists(data.x, data.y)) {
             data.multiple = data.multiple || this.defaultmultiple;
-            this.constructor.placeableClass.create(data, options);
+            this.constructor.placeableClass.create(data, options).then((terrain) => {
+                if (this.originals != undefined)
+                    this.originals.push(terrain);
+            });
         }
         this._costGrid = null;
     }

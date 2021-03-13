@@ -1,4 +1,4 @@
-import { log, setting } from "./terrainlayer.js";
+import { log, setting, makeid } from "./terrainlayer.js";
 
 export class Terrain extends PlaceableObject {
     constructor(...args) {
@@ -86,16 +86,6 @@ export class Terrain extends PlaceableObject {
      * @private
      */
     _cleanData() {
-        let makeid = function () {
-            var result = '';
-            var characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-            var charactersLength = characters.length;
-            for (var i = 0; i < 16; i++) {
-                result += characters.charAt(Math.floor(Math.random() * charactersLength));
-            }
-            return result;
-        }
-
         if (this.data._id == undefined)
             this.data._id = makeid();
 

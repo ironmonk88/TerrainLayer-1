@@ -2,16 +2,16 @@ import { TerrainLayer } from './classes/terrainlayer.js';
 import { TerrainHUD } from './classes/terrainhud.js';
 import { registerSettings } from "./js/settings.js";
 
-let theLayers = Canvas.layers;
-theLayers.terrain = TerrainLayer;
-
-/*
-let oldConfig = Scene.prototype.constructor.config;
-Scene.prototype.constructor.config = function () {
-	let result = oldConfig.call(this);
-	result.embeddedEntities.Terrain = "terrains";
-	return result;
-}*/
+function registerLayer() {
+	const layers = mergeObject(Canvas.layers, {
+		terrain: TerrainLayer
+	});
+	Object.defineProperty(Canvas, 'layers', {
+		get: function () {
+			return layers;
+		}
+	});
+}
 
 Hooks.on('canvasInit', () => {
 	canvas.hud.terrain = new TerrainHUD();
@@ -25,6 +25,7 @@ Hooks.on('init', () => {
 	});
 
 	registerSettings();
+	registerLayer();
 
 	let oldOnDragLeftStart = Token.prototype._onDragLeftStart;
 	Token.prototype._onDragLeftStart = function (event) {
@@ -47,7 +48,7 @@ Hooks.on('init', () => {
 
 		oldOnDragLeftCancel.apply(this, [event])
 	}
-	let handleDragCancel = MouseInteractionManager.prototype._handleDragCancel;
+	//let handleDragCancel = MouseInteractionManager.prototype._handleDragCancel;
 
 	/*
 	MouseInteractionManager.prototype._handleDragCancel = function (event) {
@@ -55,10 +56,4 @@ Hooks.on('init', () => {
 			canvas.terrain.highlight.children[0].visible = (canvas.terrain.showterrain || ui.controls.activeControl == 'terrain');
 		handleDragCancel.apply(this, [event])
 	}*/
-})
-
-Object.defineProperty(Canvas, 'layers', {
-	get: function () {
-		return theLayers;
-	}
 })
