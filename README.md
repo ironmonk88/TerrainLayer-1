@@ -12,6 +12,8 @@ This is still in very early stages still. Some ideas for the future of the mod i
 * Impassable tiles and/or "dangerous" tiles. 
 
 # Changelog
+1.0.5 - Fixing issue where I didn't use a isGM when I should have
+1.0.1 - Beta release of new code
 0.0.7 - 7.6 update. Added some configurable options for Icon Scale, Opacity, and Multiples.
 0.0.6 - Fixed problem with hex grid and add warning message to unsupported gridless maps.
 0.0.5 - A whole lotta bugfixes.

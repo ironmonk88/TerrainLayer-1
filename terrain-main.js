@@ -57,3 +57,14 @@ Hooks.on('init', () => {
 		handleDragCancel.apply(this, [event])
 	}*/
 })
+
+Hooks.on('renderMeasuredTemplateConfig', (config, html, data) => {
+	let widthRow = $('input[name="width"]', html).parent();
+	let tlrow = $('<div>').addClass('form-group')
+		.append($('<label>').html('Movement Cost'))
+		.append($('<input>').attr('type', 'number').attr('name', 'flags.TerrainLayer.multiple').attr('data-type', 'Number').val(config.object.getFlag('TerrainLayer', 'multiple')))
+		.insertAfter(widthRow);
+
+	let height = $(html).height();
+	$(html).css({height: height + 30});
+})

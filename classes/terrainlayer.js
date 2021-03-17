@@ -43,7 +43,7 @@ export class TerrainLayer extends PlaceablesLayer {
     }
 
     static get multipleOptions() {
-        return [0.5, 2, 3, 4];
+        return [0.5, 1, 2, 3, 4];
     }
 
     static makeid = function () {
@@ -71,14 +71,40 @@ export class TerrainLayer extends PlaceablesLayer {
     }
 
     cost(pts, options) {
-        let cost = 0;
+        let total = 0;
         pts = pts instanceof Array ? pts : [pts];
+
+        const hx = canvas.grid.w / 2;
+        const hy = canvas.grid.h / 2;
+
         for (let pt of pts) {
+            let cost = 0;
             let terrain = this.placeables.find(t => { return t.data.x == pt.x && t.data.y == pt.y; });
-            cost += (terrain?.cost(options) || 1);
+            if(terrain)
+                cost = terrain.cost(options);
+
+            let [gx, gy] = canvas.grid.grid.getPixelsFromGridPosition(pt.y, pt.x);
+            for (let measure of canvas.templates.placeables) {
+                const testX = (gx + hx) - measure.data.x;
+                const testY = (gy + hy) - measure.data.y;
+                let measMult = measure.getFlag('TerrainLayer', 'multiple');
+                if (measMult && measure.shape.contains(testX, testY)) {
+                    cost = Math.max(measMult, cost);
+                }
+            }
+
+            for (let token of canvas.tokens.placeables) {
+                const testX = (gx + hx);
+                const testY = (gy + hy);
+                if (!(testX < token.data.x || testX > token.data.x + (token.data.width * canvas.grid.w) || testY < token.data.y || testY > token.data.y + (token.data.height * canvas.grid.h))) {
+                    cost = Math.max(2, cost);
+                }
+            }
+
+            total += cost || 1;
         }
 
-        return cost;
+        return total;
     }
 
     /**
