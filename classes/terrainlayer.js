@@ -94,10 +94,12 @@ export class TerrainLayer extends PlaceablesLayer {
             }
 
             for (let token of canvas.tokens.placeables) {
-                const testX = (gx + hx);
-                const testY = (gy + hy);
-                if (!(testX < token.data.x || testX > token.data.x + (token.data.width * canvas.grid.w) || testY < token.data.y || testY > token.data.y + (token.data.height * canvas.grid.h))) {
-                    cost = Math.max(2, cost);
+                if (token.data.hidden) {
+                    const testX = (gx + hx);
+                    const testY = (gy + hy);
+                    if (!(testX < token.data.x || testX > token.data.x + (token.data.width * canvas.grid.w) || testY < token.data.y || testY > token.data.y + (token.data.height * canvas.grid.h))) {
+                        cost = Math.max(2, cost);
+                    }
                 }
             }
 

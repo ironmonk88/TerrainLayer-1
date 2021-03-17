@@ -12,6 +12,7 @@ This is still in very early stages still. Some ideas for the future of the mod i
 * Impassable tiles and/or "dangerous" tiles. 
 
 # Changelog
+1.0.6 - Adding option to set cost of measured template, and track difficult terrain of other tokens
 1.0.5 - Fixing issue where I didn't use a isGM when I should have
 1.0.1 - Beta release of new code
 0.0.7 - 7.6 update. Added some configurable options for Icon Scale, Opacity, and Multiples.
