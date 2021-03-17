@@ -110,7 +110,7 @@ export class TerrainLayer extends PlaceablesLayer {
         }
 
         //convert the old data
-        if (canvas.scene.data.flags?.TerrainLayer?.costGrid) {
+        if (game.user.isGM && canvas.scene.data.flags?.TerrainLayer?.costGrid) {
             let grid = canvas.scene.getFlag('TerrainLayer', 'costGrid');
             for (let y in grid) {
                 for (let x in grid[y]) {
