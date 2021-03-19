@@ -27,7 +27,8 @@ async function checkUpgrade() {
 			let gW = scene.data.grid;
 			let gH = scene.data.grid;
 
-			for (let [k, v] of Object.entries(scene.data.flags?.TerrainLayer)) {
+			let data = duplicate(scene.data.flags?.TerrainLayer);
+			for (let [k, v] of Object.entries(data)) {
 				if (k.startsWith('terrain')) {
 					if (k == 'terrainundefined' || v == undefined || v.x == undefined || v.y == undefined)
 						await scene.unsetFlag('TerrainLayer', k);
@@ -45,7 +46,7 @@ async function checkUpgrade() {
 					let grid = scene.getFlag('TerrainLayer', 'costGrid');
 					for (let y in grid) {
 						for (let x in grid[y]) {
-							if (Object.values(scene.data.flags.TerrainLayer).find(t => { return t.x == (parseInt(x) * gW) && t.y == (parseInt(y) * gH); }) == undefined) {
+							if (Object.values(data).find(t => { return t.x == (parseInt(x) * gW) && t.y == (parseInt(y) * gH); }) == undefined) {
 								inform();
 								let id = makeid();
 								let data = { _id: id, x: parseInt(x) * gW, y: parseInt(y) * gH, points: [[0, 0], [gW, 0], [gW, gH], [0, gH], [0, 0]], width: gW, height: gH, multiple: grid[y][x].multiple };
@@ -53,6 +54,7 @@ async function checkUpgrade() {
 							}
 						}
 					}
+					await scene.unsetFlag('TerrainLayer', 'costGrid');
                 }
 			};
 		}
@@ -83,7 +85,7 @@ Hooks.on('ready', () => {
 
 Hooks.on('init', () => {
 	game.socket.on('module.TerrainLayer', async (data) => {
-		console.log(data)
+		console.log(data);
 		canvas.terrain[data.action].apply(canvas.terrain, data.arguments);
 	});
 
@@ -106,11 +108,14 @@ Hooks.on('init', () => {
 	let oldOnDragLeftCancel = Token.prototype._onDragLeftCancel;
 	Token.prototype._onDragLeftCancel = function (event) {
 		//event.stopPropagation();
-		if (canvas != null)
+		const ruler = canvas.controls.ruler;
+
+		if (canvas != null && !(ruler.isDragRuler || ruler._state === Ruler.STATES.MEASURING))
 			canvas.terrain.visible = (canvas.grid.type != 0 && (canvas.terrain.showterrain || ui.controls.activeControl == 'terrain'));
 
 		oldOnDragLeftCancel.apply(this, [event])
 	}
+
 	//let handleDragCancel = MouseInteractionManager.prototype._handleDragCancel;
 
 	/*

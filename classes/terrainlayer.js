@@ -218,14 +218,14 @@ export class TerrainLayer extends PlaceablesLayer {
     }
 
     async toggle(show, emit = false) {
-        //this.highlight.children[0].visible = !this.highlight.children[0].visible;
         if (show == undefined)
             show = !this.showterrain;
         this.showterrain = show;
-        game.settings.set("TerrainLayer", "showterrain", this.showterrain);
-        if (game.user.isGM && emit) {
-            //await canvas.scene.setFlag('TerrainLayer','sceneVisibility', this.highlight.children[0].visible )
-            game.socket.emit('module.TerrainLayer', { action: 'toggle', arguments: [this.showterrain] })
+        canvas.terrain.visible = this.showterrain;
+        if (game.user.isGM) {
+            game.settings.set("TerrainLayer", "showterrain", this.showterrain);
+            if (emit)
+                game.socket.emit('module.TerrainLayer', { action: 'toggle', arguments: [this.showterrain] })
         }
     }
 
@@ -280,12 +280,20 @@ export class TerrainLayer extends PlaceablesLayer {
         this._costGrid = null;
 
         canvas.scene.update(flags).then(() => {
-            for (let update of updates) {
-                let terrain = this.placeables.find(t => { return t.id == update._id });
-                if (terrain != undefined)
-                    terrain.update(update, { save: false });
-            }
+            this.updateTerrain(updates);
         });
+    }
+
+    updateTerrain(data, options) {
+        data = data instanceof Array ? data : [data];
+        for (let update of data) {
+            let terrain = this.placeables.find(t => { return t.id == update._id });
+            if (terrain != undefined)
+                terrain.update(update, { save: false });
+        }
+        if (game.user.isGM) {
+            game.socket.emit('module.TerrainLayer', { action: 'updateTerrain', arguments: [data]});
+        }
     }
 
     async deleteMany(ids, options = {}) {
@@ -305,6 +313,9 @@ export class TerrainLayer extends PlaceablesLayer {
             canvas.scene.data.terrain.findSplice(t => { return t._id == id; });
             let key = `flags.TerrainLayer.-=terrain${id}`;
             updates[key] = null;
+
+            if (game.user.isGM)
+                game.socket.emit('module.TerrainLayer', { action: 'deleteTerrain', arguments: [id] });
         }
 
         if (!options.isUndo)
@@ -333,7 +344,7 @@ export class TerrainLayer extends PlaceablesLayer {
         const { preview, createState, originalEvent } = event.data;
 
         // Continue polygon point placement
-        if (createState >= 1) {
+        if (createState >= 1 && preview instanceof Terrain) {
             let point = event.data.destination;
             if (!originalEvent.shiftKey) point = canvas.grid.getSnappedPosition(point.x, point.y, this.gridPrecision);
             preview._addPoint(point, false);
@@ -368,6 +379,7 @@ export class TerrainLayer extends PlaceablesLayer {
         super._onDragLeftStart(event);
         const data = this._getNewTerrainData(event.data.origin);
         const terrain = new Terrain(data);
+
         event.data.preview = this.preview.addChild(terrain);
         terrain.draw();
     }
@@ -413,6 +425,9 @@ export class TerrainLayer extends PlaceablesLayer {
                 preview._chain = false;
                 preview.constructor.create(createData).then(d => {
                     d._creating = true;
+                    if (game.user.isGM) {
+                        game.socket.emit('module.TerrainLayer', { action: 'createTerrain', arguments: [createData] });
+                    }
                 });
             }
 
@@ -470,6 +485,51 @@ export class TerrainLayer extends PlaceablesLayer {
         event.data.coords = coords;
     }*/
 
+    pasteObjects(position, { hidden = false, snap = true } = {}) {
+        if (!this._copy.length) return [];
+
+        // Adjust the pasted position for half a grid space
+        if (snap) {
+            position.x -= canvas.dimensions.size / 2;
+            position.y -= canvas.dimensions.size / 2;
+        }
+
+        // Get the left-most object in the set
+        this._copy.sort((a, b) => a.data.x - b.data.x);
+        let { x, y } = this._copy[0].data;
+
+        // Iterate over objects
+        const toCreate = [];
+        for (let c of this._copy) {
+            let data = duplicate(c.data);
+            let dest = { x: position.x + (data.x - x), y: position.y + (data.y - y) };
+            if (snap) dest = canvas.grid.getSnappedPosition(dest.x, dest.y);
+            delete data._id;
+            toCreate.push(Terrain.normalizeShape(mergeObject(data, {
+                x: dest.x,
+                y: dest.y,
+                hidden: data.hidden || hidden
+            })));
+        }
+
+        // Call paste hooks
+        Hooks.call(`pasteTerrain`, this._copy, toCreate);
+
+        // Create the object
+        let created = toCreate.map((data) => {
+            return Terrain.create(data).then(d => {
+                d._creating = true;
+                if (game.user.isGM) {
+                    game.socket.emit('module.TerrainLayer', { action: 'createTerrain', arguments: [data] });
+                }
+            });
+        });
+
+        ui.notifications.info(`Pasted data for ${toCreate.length} Terrain objects.`);
+        created = created instanceof Array ? created : [created];
+        return created.map(c => this.get(c._id));
+    }
+
     /*
     selectObjects({ x, y, width, height, releaseOptions = {}, controlOptions = {} } = {}) {
         const oldSet = Object.values(this._controlled);
@@ -515,4 +575,21 @@ export class TerrainLayer extends PlaceablesLayer {
     terrainExists(pxX, pxY) {
         return canvas.scene.data.terrain.find(t => { return t.x == pxX && t.y == pxY }) != undefined;
     }*/
+
+
+    //This is used for players, to add an remove on the fly
+    createTerrain(data, options = {}) {
+        let userId = game.user._id;
+        let object = canvas.terrain.createObject(data);
+        object._onCreate(options, userId);
+        canvas.scene.data.terrain.push(data);
+    }
+
+    deleteTerrain(id, options = {}) {
+        const object = this.get(id);
+        this.objects.removeChild(object);
+        object._onDelete(options, game.user.id);
+        object.destroy({ children: true });
+        canvas.scene.data.terrain.findSplice(t => { return t._id == id; });
+    }
 }

@@ -12,6 +12,7 @@ This is still in very early stages still. Some ideas for the future of the mod i
 * Impassable tiles and/or "dangerous" tiles. 
 
 # Changelog
+1.0.8 - Fixing some bugs, adding Copy & Paste functionality, adding code to keep player updated.
 1.0.7 - Changing terrain to drawable rather than squares, adding terrain type and environment properties
 1.0.6 - Adding option to set cost of measured template, and track difficult terrain of other tokens
 1.0.5 - Fixing issue where I didn't use a isGM when I should have
