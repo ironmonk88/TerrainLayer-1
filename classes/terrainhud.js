@@ -16,7 +16,9 @@ export class TerrainHUD extends BasePlaceableHUD {
     getData() {
         const data = super.getData();
         return mergeObject(data, {
+            lockedClass: data.locked ? "active" : "",
             visibilityClass: data.hidden ? "active" : "",
+            cost: 'x' + this.object.multiple
         });
     }
 
@@ -60,10 +62,12 @@ export class TerrainHUD extends BasePlaceableHUD {
         this.layer.updateMany(updates).then(() => {
             for (let terrain of this.layer.controlled) {
                 let data = updates.find(u => { return u._id == terrain.data._id });
-                terrain.update(data, { save: false });
+                terrain.update(data, { save: false }).then(() => {
+                    $('.terrain-cost', this.element).html('x' + this.object.multiple);
+                });
             }
         });
-        
+
         /*
         let mult = this.object.data.multiple;
         let idx = TerrainLayer.multipleOptions.indexOf(mult);
@@ -91,20 +95,38 @@ export class TerrainHUD extends BasePlaceableHUD {
         event.currentTarget.classList.toggle("active", !isHidden);
     }
 
+    async _onToggleLocked(event) {
+        event.preventDefault();
+
+        // Toggle the locked state
+        const isLocked = this.object.data.locked;
+        const updates = this.layer.controlled.map(o => {
+            return { _id: o.id, locked: !isLocked };
+        });
+
+        // Update all objects
+        await this.layer.updateMany(updates).then(() => {
+            for (let terrain of this.layer.controlled) {
+                let data = updates.find(u => { return u._id == terrain.data._id });
+                terrain.update(data, { save: false });
+            }
+        });
+        event.currentTarget.classList.toggle("active", !isLocked);
+    }
+
     /* -------------------------------------------- */
 
     /** @override */
     setPosition() {
         $('#hud').append(this.element);
-        let { x, y, width, height } = this.object.hitArea;
+        let { x, y, width, height } = this.object.terrain.hitArea;
         const c = 70;
-        const p = -10;
-        let px = canvas.grid.grid.getPixelsFromGridPosition(this.object.data.y, this.object.data.x);
+        const p = 0;
         const position = {
-            width: width + (c * 2) + (p * 2),
+            width: width + (c * 2), // + (p * 2),
             height: height + (p * 2),
-            left: x + px[0] - c - p,
-            top: y + px[1] - p
+            left: x + this.object.data.x - c - p,
+            top: y + this.object.data.y - p
         };
         this.element.css(position);
     }

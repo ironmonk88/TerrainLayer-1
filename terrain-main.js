@@ -13,10 +13,73 @@ function registerLayer() {
 	});
 }
 
+async function checkUpgrade() {
+	let hasInformed = false;
+	let inform = function () {
+		if (!hasInformed) {
+			ui.notifications.info('Converting old TerrainLayer data, please wait');
+			hasInformed = true;
+        }
+	}
+
+	for (let scene of game.scenes.entries) {
+		if (scene.data.flags?.TerrainLayer) {
+			let gW = scene.data.grid;
+			let gH = scene.data.grid;
+
+			for (let [k, v] of Object.entries(scene.data.flags?.TerrainLayer)) {
+				if (k.startsWith('terrain')) {
+					if (k == 'terrainundefined' || v == undefined || v.x == undefined || v.y == undefined)
+						await scene.unsetFlag('TerrainLayer', k);
+					else if (v.points == undefined) {
+						inform();
+						let data = duplicate(v);
+						data.x = data.x * gW;
+						data.y = data.y * gH;
+						data.points = [[0, 0], [gW, 0], [gW, gH], [0, gH], [0, 0]];
+						data.width = gW;
+						data.height = gH;
+						await scene.setFlag('TerrainLayer', k, data);
+					}	
+				} else if (k == 'costGrid') {
+					let grid = scene.getFlag('TerrainLayer', 'costGrid');
+					for (let y in grid) {
+						for (let x in grid[y]) {
+							if (Object.values(scene.data.flags.TerrainLayer).find(t => { return t.x == (parseInt(x) * gW) && t.y == (parseInt(y) * gH); }) == undefined) {
+								inform();
+								let id = makeid();
+								let data = { _id: id, x: parseInt(x) * gW, y: parseInt(y) * gH, points: [[0, 0], [gW, 0], [gW, gH], [0, gH], [0, 0]], width: gW, height: gH, multiple: grid[y][x].multiple };
+								await scene.setFlag('TerrainLayer', 'terrain' + id, data);
+							}
+						}
+					}
+                }
+			};
+		}
+    }
+
+	if (hasInformed)
+		ui.notifications.info('TerrainLayer conversion complete.');
+}
+
+export function makeid() {
+	var result = '';
+	var characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+	var charactersLength = characters.length;
+	for (var i = 0; i < 16; i++) {
+		result += characters.charAt(Math.floor(Math.random() * charactersLength));
+	}
+	return result;
+}
+
 Hooks.on('canvasInit', () => {
 	canvas.hud.terrain = new TerrainHUD();
 	//Scene.constructor.config.embeddedEntities.Terrain = "terrain";
 });
+
+Hooks.on('ready', () => {
+	checkUpgrade();
+})
 
 Hooks.on('init', () => {
 	game.socket.on('module.TerrainLayer', async (data) => {

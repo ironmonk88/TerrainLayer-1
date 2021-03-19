@@ -6,10 +6,13 @@
   "TerrainLayer.reset": "Reset Terrain",
   "TerrainLayer.IncreaseCost": "Increase Cost",
   "TerrainLayer.DecreaseCost": "Decrease Cost",
+  "TerrainLayer.TerrainCost": "Terrain Cost",
   "TerrainLayer.Cost": "Cost",
   "TerrainLayer.Configure": "Configure this scene terrain.",
   "TerrainLayer.Configuration": "Terrain Configuration",
   "TerrainLayer.UpdateTerrain": "Update Terrain",
+  "TerrainLayer.TerrainType": "Terrain Type",
+  "TerrainLayer.Environment": "Environment",
 
   "TerrainLayer.opacity.name": "Terrain Icon Opacity",
   "TerrainLayer.opacity.hint": "Opacity of the Icon and Number.",

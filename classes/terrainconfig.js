@@ -1,4 +1,4 @@
-import { TerrainLayer, i18n } from './terrainlayer.js';
+import { TerrainLayer, i18n, terraintype, environment } from './terrainlayer.js';
 
 export class TerrainConfig extends FormApplication {
 
@@ -21,6 +21,8 @@ export class TerrainConfig extends FormApplication {
         return {
             object: duplicate(this.object.data),
             options: this.options,
+            terraintype: terraintype,
+            environment: environment,
             submitText: this.options.preview ? "Create" : "Update"
         }
     }
@@ -42,10 +44,19 @@ export class TerrainConfig extends FormApplication {
         if (!game.user.isGM) throw "You do not have the ability to configure a Terrain object.";
         if (this.object.id) {
             let data = duplicate(formData);
-            data.id = this.object.id;
-            data.multiple = (data.multiple == 1 ? 0.5 : parseInt(data.multiple));
-            return this.object.update(data, { diff: false });
+            data._id = this.object.id;
+            data.multiple = (data.multiple == 0 ? 0.5 : parseInt(data.multiple));
+            return this.object.update(data);
         }
         return this.object.constructor.create(formData);
     }
+
+    activateListeners(html) {
+        super.activateListeners(html);
+    }
 }
+
+Hooks.on("renderTerrainConfig", (app, html) => {
+    $('[name="terraintype"]', html).val(app.object.data.terraintype);
+    $('[name="environment"]', html).val(app.object.data.environment);
+})

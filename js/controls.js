@@ -8,7 +8,7 @@ Hooks.on('getSceneControlButtons', (controls) => {
 		icon: 'fas fa-mountain',
 		visible: isGM && (canvas?.grid?.type !== 0),
 		layer: 'TerrainLayer',
-		activeTool: 'addterrain',
+		activeTool: 'select',
 		tools: [
 			{
 				name: 'select',

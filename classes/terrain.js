@@ -1,22 +1,60 @@
-import { log, setting, makeid } from "./terrainlayer.js";
+import { log, setting } from "./terrainlayer.js";
+import { makeid } from '../terrain-main.js';
 
 export class Terrain extends PlaceableObject {
     constructor(...args) {
         super(...args);
 
-        // Clean initial data
-        this._cleanData();
         /**
-         * The Tile border frame
+         * The Terrain image container
+         * @type {PIXI.Container|null}
+         */
+        this.terrain = null;
+
+        /**
+         * The tiling texture used for this template, if any
+         * @type {PIXI.Texture}
+         */
+        this.texture = null;
+
+        /**
+         * The primary drawing shape
+         * @type {PIXI.Graphics}
+         */
+        this.drawing = null;
+
+        /**
+         * The terrain shape used for testing point intersection
+         * @type {PIXI.Polygon}
+         */
+        this.shape = null;
+
+        /**
+         * The Terrain border frame
          * @type {PIXI.Container|null}
          */
         this.frame = null;
 
         /**
-         * The Tile image container
-         * @type {PIXI.Container|null}
+         * Internal flag for the permanent points of the polygon
+         * @type {boolean}
+         * @private
          */
-        this.terrain = null;
+        this._fixedPoints = duplicate(this.data.points || []);
+    }
+
+    static get defaults() {
+        return {
+            width: 0,
+            height: 0,
+            //rotation:0,
+            locked: false,
+            hidden: false,
+            points: [],
+            multiple: this.layer.defaultmultiple,
+            terraintype: 'ground',
+            environment: null
+        }
     }
 
     /* -------------------------------------------- */
@@ -30,10 +68,19 @@ export class Terrain extends PlaceableObject {
         return canvas.terrain;
     }
 
+    get multiple() {
+        return this.data.multiple || Terrain.defaults.multiple;
+    }
+
+    get type() {
+        return this.data.type || Terrain.defaults.type;
+    }
+
     static async create(data, options) {
 
         //super.create(data, options);
         //canvas.scene._data.terrain
+        data._id = data._id || makeid();
 
         let userId = game.user._id;
 
@@ -82,9 +129,10 @@ export class Terrain extends PlaceableObject {
     /* -------------------------------------------- */
 
     /**
-     * Apply initial sanitizations to the provided input data to ensure that a Tile has valid required attributes.
+     * Apply initial sanitizations to the provided input data to ensure that a Terrain has valid required attributes.
      * @private
      */
+    /*
     _cleanData() {
         if (this.data._id == undefined)
             this.data._id = makeid();
@@ -93,18 +141,8 @@ export class Terrain extends PlaceableObject {
             this.data.multiple = 2;
         this.data.multiple = parseFloat(this.data.multiple);
 
-        // Constrain canvas coordinates
-        if (!canvas || !this.scene?.active) return;
-        const d = canvas.dimensions;
-        const minX = d.paddingX / d.size;
-        const minY = d.paddingY / d.size;
-        const maxX = (d.width / d.size) + minX;
-        const maxY = (d.height / d.size) + minY;
-        this.data.x = Math.clamped(parseInt(this.data.x), minX, maxX);
-        this.data.y = Math.clamped(parseInt(this.data.y), minY, maxY);
-
         this.data.flags = this.data.flags || {};
-    }
+    }*/
 
     /* -------------------------------------------- */
     /*  Properties                                  */
@@ -118,131 +156,229 @@ export class Terrain extends PlaceableObject {
     async draw() {
         this.clear();
 
-        let s = canvas.dimensions.size;
-        let mid = (s / 2);
-
-        // Create the outer frame for the border and interaction handles
-        this.frame = this.addChild(new PIXI.Container());
-        this.frame.border = this.frame.addChild(new PIXI.Graphics());
-
-        // Create the tile container and it's child elements
         let mult = Math.clamped(this.data.multiple, 0.5, 4);
-        this.terrain = this.addChild(new PIXI.Container());
-        let gridtype = (canvas.grid.type == 1 ? 'square' : (canvas.grid.type == 2 || canvas.grid.type == 3 ? 'hex-a' : 'hex-b'));
-        this.texture = await loadTexture(`modules/TerrainLayer/img/${gridtype}.${mult}x.svg`);
-        this.terrain.img = this.terrain.addChild(this._drawPrimarySprite(this.texture));
-        this.terrain.img.blendMode = PIXI.BLEND_MODES.OVERLAY;
-        //this.terrain.img = this.addChild(new PIXI.Graphics);//new TerrainSquare());
+        this.texture = (mult != 1 ? await loadTexture(`modules/TerrainLayer/img/${mult}x.svg`) : null);
 
-        let fontsize = (s / 3);
-        this.terrain.text = new PIXI.Text('x' + mult, { fontFamily: 'Arial', fontSize: fontsize, fill: 0xffffff, align: 'center' });
-        this.terrain.text.blendMode = PIXI.BLEND_MODES.OVERLAY;
-        this.terrain.text.anchor.set(0.5, 0.5);
-        this.terrain.text.x = this.terrain.text.y = mid;
-        this.terrain.addChild(this.terrain.text);
+        // Create the inner Terrain container
+        this._createTerrain();
 
-        // Refresh the current display
+        // Control Border
+        this._createFrame();
+
+        // Render Appearance
         this.refresh();
 
-        // Enable interactivity, only if the Tile has a true ID
+        // Enable Interactivity, if this is a true Terrain
         if (this.id) this.activateListeners();
         return this;
     }
 
     /* -------------------------------------------- */
 
+    /**
+     * Create the components of the terrain element, the terrain container, the drawn shape, and the overlay text
+     */
+    _createTerrain() {
+
+        // Terrain container
+        this.terrain = this.addChild(new PIXI.Container());
+
+        // Terrain Shape
+        this.drawing = this.terrain.addChild(new PIXI.Graphics());
+
+        // Overlay Text
+        this.text = setting('showText') ? this.terrain.addChild(this._createText()) : null;
+    }
+
+    /* -------------------------------------------- */
+
+    /**
+     * Create elements for the foreground text
+     * @private
+     */
+    _createText() {
+        if (this.text && !this.text._destroyed) {
+            this.text.destroy();
+            this.text = null;
+        }
+        let s = canvas.dimensions.size;
+        let fontsize = (s / 3);
+        let mult = Math.clamped(this.data.multiple, 0.5, 4);
+
+        const stroke = Math.max(Math.round(fontsize / 32), 2);
+
+        // Define the text style
+        const textStyle = new PIXI.TextStyle({
+            fontFamily: 'Arial',
+            fontSize: fontsize,
+            fill: "#FFFFFF",
+            stroke: "#111111",
+            strokeThickness: stroke,
+            dropShadow: true,
+            dropShadowColor: "#000000",
+            dropShadowBlur: Math.max(Math.round(fontsize / 16), 2),
+            dropShadowAngle: 0,
+            dropShadowDistance: 0,
+            align: "center",
+            wordWrap: false,
+            wordWrapWidth: 1.5 * this.data.width,
+            padding: stroke
+        });
+
+        // Create the text container
+        return new PreciseText('x' + mult, textStyle);
+    }
+
+    /* -------------------------------------------- */
+
+    /**
+     * Create elements for the Terrain border and handles
+     * @private
+     */
+    _createFrame() {
+        this.frame = this.addChild(new PIXI.Container());
+        this.frame.border = this.frame.addChild(new PIXI.Graphics());
+        this.frame.handle = this.frame.addChild(new ResizeHandle([1, 1]));
+    }
+
+    /* -------------------------------------------- */
+
     /** @override */
     refresh() {
+        if (this._destroyed || this.drawing._destroyed) return;
+
+        this.drawing.clear();
+
         let s = canvas.dimensions.size;
-        //let bit = (s / 16) * (Math.clamped(this.data.multiple, 2, 4) - 1);
-        let mid = (s / 2);
 
-        let terrainSquare = this.terrain.img;
+        // Outer Stroke
+        let sc = colorStringToHex("#FFFFFF");
+        let lStyle = new PIXI.LineStyle();
+        mergeObject(lStyle, { width: s / 20, color: sc, alpha: 0.9, join: PIXI.LINE_JOIN.ROUND, visible: true });
+        this.drawing.lineStyle(lStyle);
 
-        let gsW = canvas.grid.grid.w;
-        let gsH = canvas.grid.grid.h;
-
-        let bounds = null;
-        if (this.terrain.img) {
-            const img = this.terrain.img;
-
-            // Set the tile dimensions and mirroring
-            img.width = gsW;
-            img.height = gsH;
-
-            bounds = this.terrain.getLocalBounds(undefined, true);
+        // Fill Color or Texture
+        if (this.texture) {
+            let sW = (canvas.grid.w / (this.texture.width * 2));
+            let sH = (canvas.grid.h / (this.texture.height * 2));
+            this.drawing.beginTextureFill({
+                texture: this.texture,
+                color: 0xFFFFFF,
+                alpha: 1,
+                matrix: new PIXI.Matrix().scale(sW, sH)
+            });
         } else {
-            bounds = new NormalizedRectangle(0, 0, gsW, gsH);
+            //this.drawing.beginFill(colorStringToHex("#FFFFFF"), 0.4);
         }
 
+        // Draw polygon
+        let points = this.data.points || [];
+        if (points.length >= 2) {
+            if (points.length === 2) this.drawing.endFill();
+
+            /*
+            // Get drawing points
+            let last = points[points.length - 1];
+            let isClosed = points[0].equals(last);
+
+            // If the polygon is closed, or if we are filling it, we can shortcut using the drawPolygon helper
+            if (points.length > 2 && isClosed)
+                this.shape = new PIXI.Polygon(points.deepFlatten());
+
+            // Otherwise, draw each line individually
+            else {
+                this.shape.moveTo(...points[0]);
+                for (let p of points.slice(1)) {
+                    this.shape.lineTo(...p);
+                }
+            }*/
+            this.shape = new PIXI.Polygon(points.deepFlatten());
+        }
+
+        if(this.shape)
+            this.drawing.drawShape(this.shape);
+
+        // Conclude fills
+        this.drawing.lineStyle(0x000000, 0.0).closePath();
+        this.drawing.endFill();
+
         /*
-        terrainSquare.width = gsW;
-        terrainSquare.height = gsH;
-        terrainSquare.beginFill(0xffffff, 0.5);
-        terrainSquare.lineStyle(1, 0xffffff, 0.5);
-        terrainSquare.drawPolygon([0, 0, bit, 0, 0, bit]);
-        terrainSquare.drawPolygon([mid - bit, 0, mid + bit, 0, 0, mid + bit, 0, mid - bit]);
-        terrainSquare.drawPolygon([s, 0, s, bit, bit, s, 0, s, 0, s - bit, s - bit, 0]);
-        terrainSquare.drawPolygon([s, mid - bit, s, mid + bit, mid + bit, s, mid - bit, s]);
-        terrainSquare.drawPolygon([s, s, s - bit, s, s, s - bit]);
-        terrainSquare.endFill();
+        // Set shape rotation, pivoting about the non-rotated center
+        this.drawing.pivot.set(this.data.width / 2, this.data.height / 2);
+        this.drawing.position.set(this.data.width / 2, this.data.height / 2);
+        this.drawing.rotation = toRadians(this.data.rotation || 0);
+        */
 
-        terrainSquare.closePath();
-        terrainSquare.blendMode = PIXI.BLEND_MODES.OVERLAY;*/
+        // Determine drawing bounds and update the frame
+        const bounds = this.terrain.getLocalBounds();
+        if (this.id && this._controlled) this._refreshFrame(bounds);
+        else this.frame.visible = false;
 
-        this.terrain.text.opacity = (this.data.hidden ? 0.3 : setting('opacity'));
-        this.terrain.text.visible = setting('showText');
-
-        this.terrain.img.alpha = (this.data.hidden ? 0.3 : setting('opacity'));
-
-        // Set Tile position
-        let px = canvas.grid.grid.getPixelsFromGridPosition(this.data.y, this.data.x);
-        this.position.set(px[0], px[1]);
-
-        this.terrain.width = this.terrain.img.width;
-        this.terrain.height = this.terrain.img.height;
-
-        // Allow some extra padding to detect handle hover interactions
-        this.hitArea = this._controlled ? bounds.clone().pad(20) : bounds;
-
-        // Update border frame
-        this._refreshBorder(bounds);
-
+        // Toggle visibility
+        this.position.set(this.data.x, this.data.y);
+        this.terrain.hitArea = bounds;
+        this.alpha = this.data.hidden ? 0.5 : 1.0;
         this.visible = !this.data.hidden || game.user.isGM;
+
         return this;
     }
 
     /* -------------------------------------------- */
 
     /**
-     * Refresh the display of the Tile border
+     * Refresh the boundary frame which outlines the Terrain shape
      * @private
      */
-    _refreshBorder(b) {
-        const border = this.frame.border;
+    _refreshFrame({ x, y, width, height }) {
 
-        // Determine border color
+        // Determine the border color
         const colors = CONFIG.Canvas.dispositionColors;
         let bc = colors.INACTIVE;
         if (this._controlled) {
-            bc = colors.CONTROLLED;
+            bc = this.data.locked ? colors.HOSTILE : colors.CONTROLLED;
         }
 
-        // Draw the tile border
+        // Draw the border
+        const pad = 6;
         const t = CONFIG.Canvas.objectBorderThickness;
         const h = Math.round(t / 2);
-        const o = Math.round(h / 2);
+        const o = Math.round(h / 2) + pad;
+        this.frame.border.clear()
+            .lineStyle(t, 0x000000).drawRect(x - o, y - o, width + (2 * o), height + (2 * o))
+            .lineStyle(h, bc).drawRect(x - o, y - o, width + (2 * o), height + (2 * o))
 
-        let s = canvas.dimensions.size;
-        let gsW = canvas.grid.grid.w;
-        let gsH = canvas.grid.grid.h;
-        //let [x,y] = canvas.grid.grid.getPixelsFromGridPosition(this.data.y, this.data.x);
-        let x = 0;
-        let y = 0;
-        border.clear()
-            .lineStyle(t, 0x000000, 1.0).drawRoundedRect(x - o, y - o, gsW + h, gsH + h, 3)
-            .lineStyle(h, bc, 1.0).drawRoundedRect(x - o, y - o, gsW + h, gsH + h, 3);
-        border.visible = this._hover || this._controlled;
+        // Draw the handle
+        this.frame.handle.position.set(x + width + o, y + height + o);
+        this.frame.handle.clear()
+            .beginFill(0x000000, 1.0).lineStyle(h, 0x000000).drawCircle(0, 0, pad + h)
+            .lineStyle(h, bc).drawCircle(0, 0, pad);
+        this.frame.visible = true;
+    }
+
+    /* -------------------------------------------- */
+
+    /**
+     * Add a new polygon point to the terrain, ensuring it differs from the last one
+     * @private
+     */
+    _addPoint(position, temporary = true) {
+        const point = [position.x - this.data.x, position.y - this.data.y];
+        this.data.points = this._fixedPoints.concat([point]);
+        if (!temporary) {
+            this._fixedPoints = this.data.points;
+            this._drawTime = Date.now();
+        }
+    }
+
+    /* -------------------------------------------- */
+
+    /**
+     * Remove the last fixed point from the polygon
+     * @private
+     */
+    _removePoint() {
+        if (this._fixedPoints.length) this._fixedPoints.pop();
+        this.data.points = this._fixedPoints;
     }
 
     /* -------------------------------------------- */
@@ -276,12 +412,13 @@ export class Terrain extends PlaceableObject {
             this.zIndex = parseInt(data.z) || 0;
         }
 
-        // Release control if the Tile was locked
-        if (data.locked) this.release();
-
         // Full re-draw or partial refresh
-        if (changed.has("multiple")) return this.draw();
-        this.refresh();
+        if (changed.has("multiple"))
+            this.draw().then(() => super._onUpdate(data));
+        else {
+            this.refresh();
+            super._onUpdate(data);
+        }
 
         // Update the sheet, if it's visible
         if (this._sheet && this._sheet.rendered) this.sheet.render();
@@ -289,7 +426,18 @@ export class Terrain extends PlaceableObject {
 
     /* -------------------------------------------- */
     /*  Interactivity                               */
-    /* -------------------------------------------- */
+/* -------------------------------------------- */
+
+    /** @override */
+    _canControl(user, event) {
+        if (this._creating) {  // Allow one-time control immediately following creation
+            delete this._creating;
+            return true;
+        }
+        if (this._controlled) return true;
+        if (game.activeTool !== "select") return false;
+        return user.isGM;
+    }
 
     /** @override */
     _canHUD(user, event) {
@@ -300,40 +448,295 @@ export class Terrain extends PlaceableObject {
 
     /** @override */
     _canConfigure(user, event) {
-        if (this.data.locked && !this._controlled) return false;
+        if (!this._controlled) return false;
         return super._canConfigure(user);
     }
 
-    _canDrag(user, event) {
-        return false;
+    /* -------------------------------------------- */
+    /*  Event Listeners and Handlers                */
+    /* -------------------------------------------- */
+
+    /** @override */
+    activateListeners() {
+        super.activateListeners();
+        this.frame.handle.off("mouseover").off("mouseout").off("mousedown")
+            .on("mouseover", this._onHandleHoverIn.bind(this))
+            .on("mouseout", this._onHandleHoverOut.bind(this))
+            .on("mousedown", this._onHandleMouseDown.bind(this));
+        this.frame.handle.interactive = true;
     }
 
     /* -------------------------------------------- */
 
     /**
-     * Create a preview tile with a background texture instead of an image
-     * @return {Tile}
+     * Handle mouse movement which modifies the dimensions of the drawn shape
+     * @param {PIXI.interaction.InteractionEvent} event
+     * @private
      */
-    /*
-    static createPreview(data) {
-        const terrain = new Terrain(mergeObject({
-            x: 0,
-            y: 0,
-            rotation: 0,
-            z: 0,
-            width: 0,
-            height: 0
-        }, data));
-        terrain._controlled = true;
+    _onMouseDraw(event) {
+        const { destination, originalEvent } = event.data;
+        const isShift = originalEvent.shiftKey;
+        const isAlt = originalEvent.altKey;
 
-        // Swap the tile and the frame
-        terrain.draw().then(t => {
-            terrain.removeChild(terrain.frame);
-            terrain.addChild(terrain.frame);
-        });
-        return terrain;
+        // Determine position
+        let position = destination;
+        if (!isShift) {
+            position = canvas.grid.getSnappedPosition(position.x, position.y, this.layer.gridPrecision);
+        } else {
+            position = { x: parseInt(position.x), y: parseInt(position.y) };
+        }
+
+        this._addPoint(position, true);
+
+        // Refresh the display
+        this.refresh();
     }
-    */
+
+    /* -------------------------------------------- */
+    /*  Interactivity                               */
+    /* -------------------------------------------- */
+
+    /** @override */
+    _onDragLeftStart(event) {
+        if (this._dragHandle) return this._onHandleDragStart(event);
+        return super._onDragLeftStart(event);
+    }
+
+    /* -------------------------------------------- */
+
+    /** @override */
+    _onDragLeftMove(event) {
+        if (this._dragHandle) return this._onHandleDragMove(event);
+        return super._onDragLeftMove(event);
+    }
+
+    /* -------------------------------------------- */
+
+    /** @override */
+    _onDragLeftDrop(event) {
+        if (this._dragHandle) return this._onHandleDragDrop(event);
+
+        // Update each dragged Terrain
+        const clones = event.data.clones || [];
+        const updates = clones.map(c => {
+            let dest = { x: c.data.x, y: c.data.y };
+            if (!event.data.originalEvent.shiftKey) {
+                dest = canvas.grid.getSnappedPosition(c.data.x, c.data.y, this.layer.options.gridPrecision);
+            }
+
+            // Define the update
+            const update = {
+                _id: c._original.id,
+                x: dest.x,
+                y: dest.y//,
+                //rotation: c.data.rotation
+            };
+
+            // Hide the original until after the update processes
+            c._original.visible = false;
+            return update;
+        });
+        return this.layer.updateMany(updates);
+    }
+
+    /* -------------------------------------------- */
+
+    /** @override */
+    _onDragLeftCancel(event) {
+        if (this._dragHandle) return this._onHandleDragCancel(event);
+        return super._onDragLeftCancel(event);
+    }
+
+    /* -------------------------------------------- */
+    /*  Resize Handling                             */
+    /* -------------------------------------------- */
+
+    /**
+     * Handle mouse-over event on a control handle
+     * @param {PIXI.interaction.InteractionEvent} event   The mouseover event
+     * @private
+     */
+    _onHandleHoverIn(event) {
+        const handle = event.target;
+        handle.scale.set(1.5, 1.5);
+        event.data.handle = event.target;
+    }
+
+    /* -------------------------------------------- */
+
+    /**
+     * Handle mouse-out event on a control handle
+     * @param {PIXI.interaction.InteractionEvent} event   The mouseout event
+     * @private
+     */
+    _onHandleHoverOut(event) {
+        event.data.handle.scale.set(1.0, 1.0);
+    }
+
+    /* -------------------------------------------- */
+
+    /**
+     * When we start a drag event - create a preview copy of the Tile for re-positioning
+     * @param {PIXI.interaction.InteractionEvent} event   The mousedown event
+     * @private
+     */
+    _onHandleMouseDown(event) {
+        if (!this.data.locked) {
+            this._dragHandle = true;
+            this._original = duplicate(this.data);
+        }
+    }
+
+    /* -------------------------------------------- */
+
+    /**
+     * Handle the beginning of a drag event on a resize handle
+     * @param event
+     * @private
+     */
+    _onHandleDragStart(event) {
+        const handle = event.data.handle;
+        const aw = Math.abs(this.data.width);
+        const ah = Math.abs(this.data.height);
+        const x0 = this.data.x + (handle.offset[0] * aw);
+        const y0 = this.data.y + (handle.offset[1] * ah);
+        event.data.origin = { x: x0, y: y0, width: aw, height: ah };
+    }
+
+    /* -------------------------------------------- */
+
+    /**
+     * Handle mousemove while dragging a tile scale handler
+     * @param {PIXI.interaction.InteractionEvent} event   The mousemove event
+     * @private
+     */
+    _onHandleDragMove(event) {
+        const { destination, origin, originalEvent } = event.data;
+
+        // Pan the canvas if the drag event approaches the edge
+        canvas._onDragCanvasPan(originalEvent);
+
+        // Update Terrain dimensions
+        const dx = destination.x - origin.x;
+        const dy = destination.y - origin.y;
+        const update = this._rescaleDimensions(this._original, dx, dy);
+        mergeObject(this.data, update);
+        this.refresh();
+    }
+
+    /* -------------------------------------------- */
+
+    /**
+     * Handle mouseup after dragging a tile scale handler
+     * @param {PIXI.interaction.InteractionEvent} event   The mouseup event
+     * @private
+     */
+    _onHandleDragDrop(event) {
+        let { destination, handle, origin, originalEvent } = event.data;
+        if (!originalEvent.shiftKey) {
+            destination = canvas.grid.getSnappedPosition(destination.x, destination.y, this.layer.gridPrecision);
+        }
+
+        // Update dimensions
+        const dx = destination.x - origin.x;
+        const dy = destination.y - origin.y;
+        const update = this._rescaleDimensions(this._original, dx, dy);
+
+        // Commit the update
+        this.data = this._original;
+        return this.update(update);
+    }
+
+    /* -------------------------------------------- */
+
+    /**
+     * Handle cancellation of a drag event for one of the resizing handles
+     * @private
+     */
+    _onHandleDragCancel(event) {
+        this.data = this._original;
+        this._dragHandle = false;
+        delete this._original;
+        this.refresh();
+    }
+
+    /* -------------------------------------------- */
+
+    /**
+     * Apply a vectorized rescaling transformation for the terrain data
+     * @param {Object} original     The original terrain data
+     * @param {number} dx           The pixel distance dragged in the horizontal direction
+     * @param {number} dy           The pixel distance dragged in the vertical direction
+     * @private
+     */
+    _rescaleDimensions(original, dx, dy) {
+        let { points, width, height } = original;
+        width += dx;
+        height += dy;
+
+        // Rescale polygon points
+        const scaleX = 1 + (dx / original.width);
+        const scaleY = 1 + (dy / original.height);
+        points = points.map(p => [p[0] * scaleX, p[1] * scaleY]);
+
+        // Normalize the shape
+        const update = this.constructor.normalizeShape({
+            x: original.x,
+            y: original.y,
+            width: width,
+            height: height,
+            points: points
+        });
+        return update;
+    }
+
+    /* -------------------------------------------- */
+
+    /**
+     * Adjust the location, dimensions, and points of the Terrain before committing the change
+     * @param {Object} data   The Terrain data pending update
+     * @return {Object}       The adjusted data
+     * @private
+     */
+    static normalizeShape(data) {
+        // Adjust shapes with an explicit points array
+        let points = data.points;
+        if (points && points.length) {
+            //Close the shape
+            points.push([points[0][0], points[0][1]]);
+
+            // De-dupe any points which were repeated in sequence
+            points = points.reduce((arr, p1) => {
+                let p0 = arr.length ? arr[arr.length - 1] : null;
+                if (!p0 || !p1.equals(p0)) arr.push(p1);
+                return arr;
+            }, []);
+
+            // Adjust points for the minimal x and y values
+            const [xs, ys] = data.points.reduce((arr, p) => {
+                arr[0].push(p[0]);
+                arr[1].push(p[1]);
+                return arr;
+            }, [[], []]);
+
+            // Determine minimal and maximal points
+            let minX = Math.min(...xs);
+            let maxX = Math.max(...xs);
+            let minY = Math.min(...ys);
+            let maxY = Math.max(...ys);
+
+            // Normalize points
+            points = points.map(p => [p[0] - minX, p[1] - minY]);
+
+            // Update data
+            data.x += minX;
+            data.y += minY;
+            data.width = parseInt(maxX - minX);
+            data.height = parseInt(maxY - minY);
+            data.points = points;
+        }
+        return data;
+    }
 
     async update(data, options = {save: true}) {
         //update this object
@@ -351,13 +754,9 @@ export class Terrain extends PlaceableObject {
         //await canvas.scene.setFlag("TerrainLayer", "terrain" + this.data._id, objectdata, {diff: false});
         //if the multiple has changed then update the image
         if (data.multiple != undefined) {
-            let mult = this.data.multiple;
-            let gridtype = (canvas.grid.type == 1 ? 'square' : (canvas.grid.type == 2 || canvas.grid.type == 3 ? 'hex-a' : 'hex-b'));
-            this.texture = await loadTexture(`modules/TerrainLayer/img/${gridtype}.${mult}x.svg`);
-            this.terrain.removeChild(this.terrain.img);
-            this.terrain.img = this.terrain.addChild(this._drawPrimarySprite(this.texture));
-        }
-        this.refresh();
+            this.draw();
+        }else
+            this.refresh();
         return this;
     }
 

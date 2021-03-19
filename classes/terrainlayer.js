@@ -1,6 +1,7 @@
 import { Terrain } from './terrain.js';
 import { TerrainConfig } from './terrainconfig.js';
 import { TerrainHUD } from './terrainhud.js';
+import { makeid } from '../terrain-main.js';
 
 export let debug = (...args) => {
     if (debugEnabled > 1) console.log("DEBUG: terrainlayer | ", ...args);
@@ -18,9 +19,13 @@ export let setting = key => {
     return game.settings.get("TerrainLayer", key);
 };
 
-export let makeid = () => {
-    return TerrainLayer.makeid();
-}
+export let terraintype = key => {
+    return TerrainLayer.terraintype;
+};
+
+export let environment = key => {
+    return TerrainLayer.environment;
+};
 
 export class TerrainLayer extends PlaceablesLayer {
     constructor() {
@@ -33,31 +38,44 @@ export class TerrainLayer extends PlaceablesLayer {
     static get layerOptions() {
         return mergeObject(super.layerOptions, {
             zIndex: 15,
-            controllableObjects: true,
-            //objectClass: Note,
-            //sheetClass: NoteConfig,
+            canDragCreate: game.user.isGM,
+            canDelete: game.user.isGM,
+            controllableObjects: game.user.isGM,
+            rotatableObjects: false,
             objectClass: Terrain,
-            sheetClass: TerrainConfig,
-            rotatableObjects: false
+            sheetClass: TerrainConfig
         });
+    }
+
+    get gridPrecision() {
+        return 4;
     }
 
     static get multipleOptions() {
         return [0.5, 1, 2, 3, 4];
     }
 
-    static makeid = function () {
-        var result = '';
-        var characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-        var charactersLength = characters.length;
-        for (var i = 0; i < 16; i++) {
-            result += characters.charAt(Math.floor(Math.random() * charactersLength));
-        }
-        return result;
+    static get terraintype() {
+        return [{ id: 'ground', text: 'Ground' }, { id: 'air', text: 'Air Only' }, { id: 'both', text: 'Air & Ground' }];
+    }
+
+    static get environment() {
+        return [
+            { id: '', text: '' },
+            { id: 'arctic', text: 'Arctic' },
+            { id: 'coast', text: 'Coast' },
+            { id: 'desert', text: 'Desert' },
+            { id: 'forest', text: 'Forest' },
+            { id: 'grassland', text: 'Grassland' },
+            { id: 'mountain', text: 'Mountain' },
+            { id: 'swamp', text: 'Swamp' },
+            { id: 'underdark', text: 'Underdark' },
+            { id: 'water', text: 'Water' }
+        ];
     }
 
     static multipleText(multiple) {
-        return (parseInt(multiple) == 1 || parseInt(multiple) == 0.5 ? '1/2' : multiple);
+        return (parseInt(multiple) == 0 || parseInt(multiple) == 0.5 ? '1/2' : multiple);
     }
 
 /* -------------------------------------------- */
@@ -65,12 +83,12 @@ export class TerrainLayer extends PlaceablesLayer {
     get costGrid() {
         console.warn('costGrid is deprecated, please use the cost function instead');
         if (this._costGrid == undefined) {
-            this.buildCostGrid(canvas.scene.data.terrain);
+            this.buildCostGrid(canvas.terrain.placeables);
         }
         return this._costGrid;
     }
 
-    cost(pts, options) {
+    cost(pts, options = {}) {
         let total = 0;
         pts = pts instanceof Array ? pts : [pts];
 
@@ -79,11 +97,18 @@ export class TerrainLayer extends PlaceablesLayer {
 
         for (let pt of pts) {
             let cost = 0;
-            let terrain = this.placeables.find(t => { return t.data.x == pt.x && t.data.y == pt.y; });
-            if(terrain)
-                cost = terrain.cost(options);
-
             let [gx, gy] = canvas.grid.grid.getPixelsFromGridPosition(pt.y, pt.x);
+
+            //get the cost for the terrain layer
+            for (let terrain of this.placeables) {
+                const testX = (gx + hx) - terrain.data.x;
+                const testY = (gy + hy) - terrain.data.y;
+                if (terrain.multiple != 1 && terrain.shape.contains(testX, testY)) {
+                    cost = Math.max(terrain.cost(options), cost);
+                }
+            }
+
+            //get the cost for any measured templates, ie spells
             for (let measure of canvas.templates.placeables) {
                 const testX = (gx + hx) - measure.data.x;
                 const testY = (gy + hy) - measure.data.y;
@@ -93,8 +118,9 @@ export class TerrainLayer extends PlaceablesLayer {
                 }
             }
 
+            //get the cost for walking through another creatures square
             for (let token of canvas.tokens.placeables) {
-                if (token.data.hidden) {
+                if (!token.data.hidden && (options.elevation == undefined || token.data.elevation == options.elevation)) {
                     const testX = (gx + hx);
                     const testY = (gy + hy);
                     if (!(testX < token.data.x || testX > token.data.x + (token.data.width * canvas.grid.w) || testY < token.data.y || testY > token.data.y + (token.data.height * canvas.grid.h))) {
@@ -117,12 +143,6 @@ export class TerrainLayer extends PlaceablesLayer {
         return canvas.hud.terrain;
     }
 
-    /*
-    async draw() {
-        canvas.scene._data.terrain = canvas.scene.data.terrain = (canvas.scene.data.flags?.TerrainLayer?.data || []);
-        super.draw();
-    }*/
-
     async draw() {
         canvas.scene.data.terrain = [];
 
@@ -130,27 +150,12 @@ export class TerrainLayer extends PlaceablesLayer {
             for (let [k, v] of Object.entries(canvas.scene.data.flags?.TerrainLayer)) {
                 if (k.startsWith('terrain')) {
                     if (k != 'terrainundefined' && v != undefined && v.x != undefined && v.y != undefined)
-                        canvas.scene.data.terrain.push(v);
+                        if (v.points != undefined)
+                            canvas.scene.data.terrain.push(v);
                     else
                         await canvas.scene.unsetFlag('TerrainLayer', k);
                 }
             };
-        }
-
-        //convert the old data
-        if (game.user.isGM && canvas.scene.data.flags?.TerrainLayer?.costGrid) {
-            let grid = canvas.scene.getFlag('TerrainLayer', 'costGrid');
-            for (let y in grid) {
-                for (let x in grid[y]) {
-                    if (canvas.scene.data.terrain.find(t => { return t.x == x && t.y == y }) == undefined) {
-                        let id = makeid();
-                        let data = { _id: id, x: parseInt(x), y: parseInt(y), multiple: grid[y][x].multiple };
-                        canvas.scene.data.terrain.push(data);
-                        await canvas.scene.setFlag('TerrainLayer', 'terrain' + id, data);
-                    }
-                }
-            }
-            //canvas.scene.unsetFlag('TerrainLayer', 'costGrid');
         }
 
         const d = canvas.dimensions;
@@ -163,7 +168,6 @@ export class TerrainLayer extends PlaceablesLayer {
         this.objects = this.addChild(new PIXI.Container());
         this.objects.sortableChildren = true;
         this.objects.visible = false;
-
 
         // Create preview container which is always above objects
         this.preview = this.addChild(new PIXI.Container());
@@ -181,13 +185,35 @@ export class TerrainLayer extends PlaceablesLayer {
 
     async buildCostGrid(data) {
         this._costGrid = {};
-        for (let grid of data) {
-            let multiple = grid.multiple;
-            let type = 'ground';
-            if (typeof this._costGrid[grid.y] === 'undefined')
-                this._costGrid[grid.y] = {};
-            this._costGrid[grid.y][grid.x] = { multiple, type };
+        for (let terrain of data) {
+            const grid = canvas.grid;
+            const d = canvas.dimensions;
 
+            // Get number of rows and columns
+            const nr = Math.ceil(terrain.data.height / grid.h);//Math.ceil(((terrain.height * 1.5) / d.distance) / (d.size / grid.h));
+            const nc = Math.ceil(terrain.data.width / grid.w);//Math.ceil(((terrain.width * 1.5) / d.distance) / (d.size / grid.w));
+
+            // Get the offset of the terrain origin relative to the top-left grid space
+            const [tx, ty] = canvas.grid.getTopLeft(terrain.data.x, terrain.data.y);
+            const [row0, col0] = grid.grid.getGridPositionFromPixels(tx, ty);
+            const hx = canvas.grid.w / 2;
+            const hy = canvas.grid.h / 2;
+
+            // Identify grid coordinates covered by the template Graphics
+            for (let r = 0; r < nr; r++) {
+                for (let c = 0; c < nc; c++) {
+                    let tr = row0 + r;
+                    let tc = col0 + c;
+                    let [gx, gy] = canvas.grid.grid.getPixelsFromGridPosition(tr, tc);
+                    const testX = (gx + hx) - terrain.x;
+                    const testY = (gy + hy) - terrain.y;
+                    let contains = terrain.shape.contains(testX, testY);
+                    if (!contains) continue;
+                    if (typeof this._costGrid[tr] === 'undefined')
+                        this._costGrid[tr] = {};
+                    this._costGrid[tr][tc] = { multiple: terrain.multiple, type: terrain.type };
+                }
+            }
         }
     }
 
@@ -219,7 +245,7 @@ export class TerrainLayer extends PlaceablesLayer {
         }
 
         // Difference each update against existing data
-        const updates = canvas.scene.data.terrain.reduce((arr, d) => {
+        let updates = canvas.scene.data.terrain.reduce((arr, d) => {
             if (!pending.has(d._id)) return arr;
             let update = pending.get(d._id);
 
@@ -251,9 +277,15 @@ export class TerrainLayer extends PlaceablesLayer {
             flags[key] = u;
         }
 
-        canvas.scene.update(flags); //, { diff: false }
-
         this._costGrid = null;
+
+        canvas.scene.update(flags).then(() => {
+            for (let update of updates) {
+                let terrain = this.placeables.find(t => { return t.id == update._id });
+                if (terrain != undefined)
+                    terrain.update(update, { save: false });
+            }
+        });
     }
 
     async deleteMany(ids, options = {}) {
@@ -283,59 +315,144 @@ export class TerrainLayer extends PlaceablesLayer {
         canvas.scene.update(updates);
     }
 
+    _getNewTerrainData(origin) {
+        const data = mergeObject(Terrain.defaults, {
+            x: origin.x,
+            y: origin.y,
+            points: [[0,0]]
+        });
+        return data;
+    }
+
+    /* -------------------------------------------- */
+    /*  Event Listeners and Handlers                */
+    /* -------------------------------------------- */
+
+    /** @override */
     _onClickLeft(event) {
+        const { preview, createState, originalEvent } = event.data;
+
+        // Continue polygon point placement
+        if (createState >= 1) {
+            let point = event.data.destination;
+            if (!originalEvent.shiftKey) point = canvas.grid.getSnappedPosition(point.x, point.y, this.gridPrecision);
+            preview._addPoint(point, false);
+            preview._chain = true; // Note that we are now in chain mode
+            return preview.refresh();
+        }
+
+        // Standard left-click handling
         super._onClickLeft(event);
-        if (game.activeTool == 'addterrain') {
-            this.originals = [];
-            let pos = event.data.getLocalPosition(canvas.app.stage);
-            let gridPt = canvas.grid.grid.getGridPositionFromPixels(pos.x, pos.y);
-            let [y, x] = gridPt;  //Normalize the returned data because it's in [y,x] format
+    }
 
-            this.createTerrain({ x: x, y: y });
-            //make sure there isn't a terrain already there
-            /*
-            let pos = event.data.getLocalPosition(canvas.app.stage);
-            let gridPt = canvas.grid.grid.getGridPositionFromPixels(pos.x, pos.y);
-            let [y, x] = gridPt;  //Normalize the returned data because it's in [y,x] format
-            log('Adding terrain', x, y);
-            if (!this.terrainExists(x, y)) {
-                //const terrain = new Terrain({ x: x, y: y });
-                //this.constructor.placeableClass.create(terrain.data);
-                //terrain.draw();
-                this.constructor.placeableClass.create({ x: x, y: y, multiple: 2 });
-            }
-            this._costGrid = null;*/
+    /* -------------------------------------------- */
+
+    /** @override */
+    _onClickLeft2(event) {
+        const { createState, preview } = event.data;
+
+        // Conclude polygon placement with double-click
+        if (createState >= 1) {
+            event.data.createState = 2;
+            return this._onDragLeftDrop(event);
         }
+
+        // Standard double-click handling
+        super._onClickLeft2(event);
     }
 
-    _onDragLeftStart(e) {
-        if (game.activeTool == "select")
-            this.dragging = true;
+    /* -------------------------------------------- */
+
+    /** @override */
+    _onDragLeftStart(event) {
+        super._onDragLeftStart(event);
+        const data = this._getNewTerrainData(event.data.origin);
+        const terrain = new Terrain(data);
+        event.data.preview = this.preview.addChild(terrain);
+        terrain.draw();
     }
 
+    /* -------------------------------------------- */
+
+    /** @override */
     _onDragLeftMove(event) {
-        if (game.activeTool == "select")
-            return this._onDragSelect(event);
-        else if (game.activeTool == 'addterrain') {
-            let pos = event.data.getLocalPosition(canvas.app.stage);
-            let gridPt = canvas.grid.grid.getGridPositionFromPixels(pos.x, pos.y);
-            let [y, x] = gridPt;  //Normalize the returned data because it's in [y,x] format
-
-            this.createTerrain({ x: x, y: y });
-            /*let pos = event.data.getLocalPosition(canvas.app.stage);
-            let gridPt = canvas.grid.grid.getGridPositionFromPixels(pos.x, pos.y);
-            let [y, x] = gridPt;  //Normalize the returned data because it's in [y,x] format
-
-            if (!this.terrainExists(x, y)) {
-                //const terrain = new Terrain({ x: x, y: y });
-                //terrain.draw();
-                //this.constructor.placeableClass.create(terrain.data);
-                this.constructor.placeableClass.create({ x: x, y: y, multiple: 2 });
-            }
-            this._costGrid = null;*/
+        const { preview, createState } = event.data;
+        if (!preview) return;
+        if (preview.parent === null) { // In theory this should never happen, but rarely does
+            this.preview.addChild(preview);
+        }
+        if (createState >= 1) {
+            preview._onMouseDraw(event);
         }
     }
 
+    /* -------------------------------------------- */
+
+    /**
+     * Handling of mouse-up events which conclude a new object creation after dragging
+     * @private
+     */
+    _onDragLeftDrop(event) {
+        const { createState, destination, origin, preview } = event.data;
+
+        // Successful drawing completion
+        if (createState === 2) {
+            const distance = Math.hypot(destination.x - origin.x, destination.y - origin.y);
+            const minDistance = distance >= (canvas.dimensions.size / this.gridPrecision);
+            const completePolygon = (preview.data.points.length > 2);
+
+            // Create a completed terrain
+            if (minDistance || completePolygon) {
+                event.data.createState = 0;
+                const data = preview.data;
+
+                // Adjust the final data
+                const createData = Terrain.normalizeShape(data);
+
+                // Create the object
+                preview._chain = false;
+                preview.constructor.create(createData).then(d => {
+                    d._creating = true;
+                });
+            }
+
+            // Cancel the preview
+            return this._onDragLeftCancel(event);
+        }
+
+        // In-progress polygon
+        if (createState === 1) {
+            event.data.originalEvent.preventDefault();
+            if (preview._chain) return;
+            return this._onClickLeft(event);
+        }
+
+        // Incomplete drawing
+        return this._onDragLeftCancel(event);
+    }
+
+    /* -------------------------------------------- */
+
+    /** @override */
+    _onDragLeftCancel(event) {
+        const preview = this.preview.children?.[0] || null;
+        if (preview?._chain) {
+            preview._removePoint();
+            preview.refresh();
+            if (preview.data.points.length) return event.preventDefault();
+        }
+        super._onDragLeftCancel(event);
+    }
+
+    /* -------------------------------------------- */
+
+    /** @override */
+    _onClickRight(event) {
+        const preview = this.preview.children?.[0] || null;
+        if (preview) return canvas.mouseInteractionManager._dragRight = false;
+        super._onClickRight(event);
+    }
+    /*
     _onDragSelect(event) {
         // Extract event data
         const { origin, destination } = event.data;
@@ -351,18 +468,9 @@ export class TerrainLayer extends PlaceablesLayer {
         // Draw the select rectangle
         canvas.controls.drawSelect(coords);
         event.data.coords = coords;
-    }
+    }*/
 
-    _onDragLeftDrop(e) {
-        if (game.activeTool == "select") {
-            canvas._onDragLeftDrop(e);
-        }
-        else if (game.activeTool == 'addterrain') {
-            this.storeHistory("create", this.originals);
-            delete this.originals;
-        }
-    }
-
+    /*
     selectObjects({ x, y, width, height, releaseOptions = {}, controlOptions = {} } = {}) {
         const oldSet = Object.values(this._controlled);
 
@@ -390,8 +498,9 @@ export class TerrainLayer extends PlaceablesLayer {
         const changed = (toRelease.length > 0) || (toControl.length > 0);
         if (changed) canvas.initializeSources();
         return changed;
-    }
+    }*/
 
+    /*
     createTerrain(data, options = { }) {
         if (!this.terrainExists(data.x, data.y)) {
             data.multiple = data.multiple || this.defaultmultiple;
@@ -401,9 +510,9 @@ export class TerrainLayer extends PlaceablesLayer {
             });
         }
         this._costGrid = null;
-    }
-
+    }*/
+    /*
     terrainExists(pxX, pxY) {
         return canvas.scene.data.terrain.find(t => { return t.x == pxX && t.y == pxY }) != undefined;
-    }
+    }*/
 }

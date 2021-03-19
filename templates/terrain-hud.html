@@ -1,5 +1,8 @@
 <form id="{{id}}" class="{{classes}}" data-appid="{{appId}}" autocomplete="off" onsubmit="event.preventDefault();">
     <div class="col left">
+        <div class="control-icon" style="font-size: 18px;flex: 0 0 30px;height: 30px;line-height: 30px;">
+            <span class="terrain-cost" title="{{localize "TerrainLayer.TerrainCost"}}">{{cost}}</span>
+        </div>
     </div>
 
     <div class="col middle">
@@ -9,6 +12,10 @@
         {{#if isGM}}
         <div class="control-icon visibility {{visibilityClass}}">
             <img src="{{icons.visibility}}" width="36" height="36" title="{{localize "HUD.ToggleVis"}}">
+        </div>
+
+        <div class="control-icon locked {{lockedClass}}">
+            <img src="{{icons.lock}}" width="36" height="36" title="{{localize "HUD.ToggleLock"}}">
         </div>
 
         <div class="control-icon inc-multiple">
