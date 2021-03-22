@@ -1,5 +1,4 @@
-import { log, setting } from "./terrainlayer.js";
-import { makeid } from '../terrain-main.js';
+import { makeid, log, setting } from '../terrain-main.js';
 
 export class Terrain extends PlaceableObject {
     constructor(...args) {
@@ -187,7 +186,8 @@ export class Terrain extends PlaceableObject {
         this.drawing = this.terrain.addChild(new PIXI.Graphics());
 
         // Overlay Text
-        this.text = setting('showText') ? this.terrain.addChild(this._createText()) : null;
+        this.text = this.terrain.addChild(this._createText());
+		this._positionText();
     }
 
     /* -------------------------------------------- */
@@ -227,6 +227,46 @@ export class Terrain extends PlaceableObject {
 
         // Create the text container
         return new PreciseText('x' + mult, textStyle);
+    }
+	
+	_positionText() {
+        //center text
+        var points = this.data.points;
+        var x = 0,
+            y = 0,
+            i,
+            j,
+            f;
+
+        var area = function (points) {
+            var area = 0,
+                i,
+                j;
+
+            for (i = 0, j = points.length - 1; i < points.length; j = i, i++) {
+                var point1 = points[i];
+                var point2 = points[j];
+                area += point1[0] * point2[1];
+                area -= point1[1] * point2[0];
+            }
+            area /= 2;
+
+            return area;
+        }
+
+        for (i = 0, j = points.length - 1; i < points.length; j = i, i++) {
+            var point1 = points[i];
+            var point2 = points[j];
+            f = point1[0] * point2[1] - point2[0] * point1[1];
+            x += (point1[0] + point2[0]) * f;
+            y += (point1[1] + point2[1]) * f;
+        }
+
+        f = area(points) * 6;
+
+        this.text.anchor.set(0.5, 0.5);
+        this.text.x = parseInt(x / f);
+        this.text.y = parseInt(y / f);
     }
 
     /* -------------------------------------------- */
@@ -275,23 +315,6 @@ export class Terrain extends PlaceableObject {
         let points = this.data.points || [];
         if (points.length >= 2) {
             if (points.length === 2) this.drawing.endFill();
-
-            /*
-            // Get drawing points
-            let last = points[points.length - 1];
-            let isClosed = points[0].equals(last);
-
-            // If the polygon is closed, or if we are filling it, we can shortcut using the drawPolygon helper
-            if (points.length > 2 && isClosed)
-                this.shape = new PIXI.Polygon(points.deepFlatten());
-
-            // Otherwise, draw each line individually
-            else {
-                this.shape.moveTo(...points[0]);
-                for (let p of points.slice(1)) {
-                    this.shape.lineTo(...p);
-                }
-            }*/
             this.shape = new PIXI.Polygon(points.deepFlatten());
         }
 
@@ -308,6 +331,7 @@ export class Terrain extends PlaceableObject {
         this.drawing.position.set(this.data.width / 2, this.data.height / 2);
         this.drawing.rotation = toRadians(this.data.rotation || 0);
         */
+		this.text.visible = setting('showText') && this.id && this.multiple != 1 && !this._original;
 
         // Determine drawing bounds and update the frame
         const bounds = this.terrain.getLocalBounds();
@@ -601,6 +625,7 @@ export class Terrain extends PlaceableObject {
         const x0 = this.data.x + (handle.offset[0] * aw);
         const y0 = this.data.y + (handle.offset[1] * ah);
         event.data.origin = { x: x0, y: y0, width: aw, height: ah };
+		this.resizing = true;
     }
 
     /* -------------------------------------------- */
@@ -621,6 +646,7 @@ export class Terrain extends PlaceableObject {
         const dy = destination.y - origin.y;
         const update = this._rescaleDimensions(this._original, dx, dy);
         mergeObject(this.data, update);
+		
         this.refresh();
     }
 
@@ -641,6 +667,9 @@ export class Terrain extends PlaceableObject {
         const dx = destination.x - origin.x;
         const dy = destination.y - origin.y;
         const update = this._rescaleDimensions(this._original, dx, dy);
+		this.resizing = false;
+		
+		this._positionText();
 
         // Commit the update
         this.data = this._original;
@@ -750,6 +779,7 @@ export class Terrain extends PlaceableObject {
             //updates['flags.TerrainLayer.terrain' + this.data._id + '.multiple'] = data.multiple;
             let key = `flags.TerrainLayer.terrain${this.data._id}`;
             await canvas.scene.update({ [key]: objectdata }, { diff: false });
+			canvas.terrain._costGrid = null;
         }
         //await canvas.scene.setFlag("TerrainLayer", "terrain" + this.data._id, objectdata, {diff: false});
         //if the multiple has changed then update the image

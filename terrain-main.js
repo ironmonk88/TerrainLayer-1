@@ -2,6 +2,23 @@ import { TerrainLayer } from './classes/terrainlayer.js';
 import { TerrainHUD } from './classes/terrainhud.js';
 import { registerSettings } from "./js/settings.js";
 
+export let debug = (...args) => {
+	if (debugEnabled > 1) console.log("DEBUG: terrainlayer-v2 | ", ...args);
+};
+export let log = (...args) => console.log("terrainlayer-v2 | ", ...args);
+export let warn = (...args) => {
+	if (debugEnabled > 0) console.warn("terrainlayer-v2 | ", ...args);
+};
+export let error = (...args) => console.error("terrainlayer-v2 | ", ...args);
+
+export let i18n = key => {
+	return game.i18n.localize(key);
+};
+
+export let setting = key => {
+	return game.settings.get("terrainlayer-v2", key);
+};
+
 function registerLayer() {
 	const layers = mergeObject(Canvas.layers, {
 		terrain: TerrainLayer

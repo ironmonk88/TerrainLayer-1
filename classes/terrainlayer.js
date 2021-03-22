@@ -1,23 +1,7 @@
 import { Terrain } from './terrain.js';
 import { TerrainConfig } from './terrainconfig.js';
 import { TerrainHUD } from './terrainhud.js';
-import { makeid } from '../terrain-main.js';
-
-export let debug = (...args) => {
-    if (debugEnabled > 1) console.log("DEBUG: terrainlayer | ", ...args);
-};
-export let log = (...args) => console.log("terrainlayer | ", ...args);
-export let warn = (...args) => {
-    if (debugEnabled > 0) console.warn("terrainlayer | ", ...args);
-};
-export let error = (...args) => console.error("terrainlayer | ", ...args);
-export let i18n = key => {
-    return game.i18n.localize(key);
-};
-
-export let setting = key => {
-    return game.settings.get("TerrainLayer", key);
-};
+import { makeid, log, error, i18n, setting } from '../terrain-main.js';
 
 export let terraintype = key => {
     return TerrainLayer.terraintype;
@@ -48,7 +32,11 @@ export class TerrainLayer extends PlaceablesLayer {
     }
 
     get gridPrecision() {
-        return 4;
+        let size = canvas.dimensions.size;
+        if (size >= 128) return 16;
+        else if (size >= 64) return 8;
+        else if (size >= 32) return 4;
+        else if (size >= 16) return 2;
     }
 
     static get multipleOptions() {
@@ -103,7 +91,10 @@ export class TerrainLayer extends PlaceablesLayer {
             for (let terrain of this.placeables) {
                 const testX = (gx + hx) - terrain.data.x;
                 const testY = (gy + hy) - terrain.data.y;
-                if (terrain.multiple != 1 && terrain.shape.contains(testX, testY)) {
+                if (terrain.multiple != 1 &&
+                    !options.ignore?.includes(terrain.environment) &&
+                    !((terrain.terraintype == 'ground' && options.elevation > 0) || (terrain.terraintype == 'air' && options.elevation <= 0)) &&
+                    terrain.shape.contains(testX, testY)) {
                     cost = Math.max(terrain.cost(options), cost);
                 }
             }
@@ -113,18 +104,25 @@ export class TerrainLayer extends PlaceablesLayer {
                 const testX = (gx + hx) - measure.data.x;
                 const testY = (gy + hy) - measure.data.y;
                 let measMult = measure.getFlag('TerrainLayer', 'multiple');
-                if (measMult && measure.shape.contains(testX, testY)) {
+                let measType = measure.getFlag('TerrainLayer', 'terraintype') || 'ground';
+                let measEnv = measure.getFlag('TerrainLayer', 'environment') || '';
+                if (measMult &&
+                    !options.ignore?.includes(measEnv) &&
+                    !((measType == 'ground' && options.elevation > 0) || (measType == 'air' && options.elevation <= 0)) &&
+                    measure.shape.contains(testX, testY)) {
                     cost = Math.max(measMult, cost);
                 }
             }
 
-            //get the cost for walking through another creatures square
-            for (let token of canvas.tokens.placeables) {
-                if (!token.data.hidden && (options.elevation == undefined || token.data.elevation == options.elevation)) {
-                    const testX = (gx + hx);
-                    const testY = (gy + hy);
-                    if (!(testX < token.data.x || testX > token.data.x + (token.data.width * canvas.grid.w) || testY < token.data.y || testY > token.data.y + (token.data.height * canvas.grid.h))) {
-                        cost = Math.max(2, cost);
+            if (setting("tokens-cause-difficult")) {
+                //get the cost for walking through another creatures square
+                for (let token of canvas.tokens.placeables) {
+                    if (!token.data.hidden && (options.elevation == undefined || token.data.elevation == options.elevation)) {
+                        const testX = (gx + hx);
+                        const testY = (gy + hy);
+                        if (!(testX < token.data.x || testX > token.data.x + (token.data.width * canvas.grid.w) || testY < token.data.y || testY > token.data.y + (token.data.height * canvas.grid.h))) {
+                            cost = Math.max(2, cost);
+                        }
                     }
                 }
             }
@@ -133,6 +131,19 @@ export class TerrainLayer extends PlaceablesLayer {
         }
 
         return total;
+    }
+	
+	terrainAt(x, y) {
+        const hx = canvas.grid.w / 2;
+        const hy = canvas.grid.h / 2;
+        let [gx, gy] = canvas.grid.grid.getPixelsFromGridPosition(y, x);
+        let terrains = this.placeables.filter(t => {
+            const testX = (gx + hx) - t.data.x;
+            const testY = (gy + hy) - t.data.y;
+            return terrain.shape.contains(testX, testY);
+        });
+
+        return terrains;
     }
 
     /**

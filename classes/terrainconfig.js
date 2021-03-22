@@ -1,4 +1,5 @@
-import { TerrainLayer, i18n, terraintype, environment } from './terrainlayer.js';
+import { TerrainLayer, terraintype, environment } from './terrainlayer.js';
+import { log, setting, i18n} from '../terrain-main.js';
 
 export class TerrainConfig extends FormApplication {
 
